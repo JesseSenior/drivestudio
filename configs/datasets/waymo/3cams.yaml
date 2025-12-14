@@ -24,7 +24,7 @@ data:
     load_sky_mask: True # whether to load sky mask
     load_dynamic_mask: True # whether to load dynamic mask
     load_objects: True # whether to load object bounding boxes
-    load_smpl: True # whether to load SMPL template for pedestrians
+    load_smpl: False # whether to load SMPL template for pedestrians
     sampler: # error based image sampler
       buffer_downscale: 8 # downscale factor for the buffer wrt load_size
       buffer_ratio: 0.5 # the percentage of images sampled according to the error buffer
@@ -38,6 +38,6 @@ data:
     # ---- compute aabb from lidar ---- #
     # if load_lidar is True, we compute aabb from lidar, otherwise we compute aabb from cameras
     # 1) downsample lidar by random sampling to 1/lidar_downsample_factor number of points
-    # 2) compute aabb from the downsampled lidar points by using the percentile of lidar_percentiles 
+    # 2) compute aabb from the downsampled lidar points by using the percentile of lidar_percentiles
     lidar_downsample_factor: 4 # downsample lidar by this factor to compute percentile
     lidar_percentile: 0.02  # percentile to compute aabb from lidar
