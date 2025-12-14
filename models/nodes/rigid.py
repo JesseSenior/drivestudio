@@ -3,9 +3,22 @@ import random
 from typing import Dict, List, Tuple
 
 import torch
+from gsplat.cuda._wrapper import spherical_harmonics
+from gsplat.cuda_legacy._torch_impl import quat_to_rotmat
+from gsplat.cuda_legacy._wrapper import num_sh_bases
+from pytorch3d.transforms import matrix_to_quaternion
 from torch.nn import Parameter
 
-from models.gaussians.basics import *
+from models.gaussians.basics import (
+    RGB2SH,
+    dataclass_camera,
+    dup_in_optim,
+    interpolate_quats,
+    k_nearest_sklearn,
+    quat_mult,
+    random_quat_tensor,
+    remove_from_optim,
+)
 from models.gaussians.vanilla import VanillaGaussians
 
 logger = logging.getLogger()

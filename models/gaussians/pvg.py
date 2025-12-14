@@ -17,7 +17,13 @@ import torch
 from torch.distributions import uniform
 from torch.nn import Parameter
 
-from models.gaussians.basics import *
+from models.gaussians.basics import (
+    dataclass_camera,
+    dup_in_optim,
+    quat_to_rotmat,
+    remove_from_optim,
+    spherical_harmonics,
+)
 from models.gaussians.vanilla import VanillaGaussians
 
 logger = logging.getLogger()

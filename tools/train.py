@@ -86,12 +86,11 @@ def setup(args):
     # setup random seeds
     set_seeds(cfg.seed)
 
-    global logger
     setup_logging(output=log_dir, level=logging.INFO, time_string=current_time)
     logger.info("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))
 
     # save config
-    logger.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
+    # logger.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
     saved_cfg_path = os.path.join(log_dir, "config.yaml")
     with open(saved_cfg_path, "w") as f:
         OmegaConf.save(config=cfg, f=f)

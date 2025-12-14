@@ -66,3 +66,7 @@ python tools/train.py \
     data.start_timestep=$start_timestep \
     data.end_timestep=$end_timestep
 ```
+
+```bash
+python tools/eval.py --resume_from $ckpt_path
+```

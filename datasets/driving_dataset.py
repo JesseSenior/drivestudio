@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Dict, Literal, Union
+from typing import Dict, List, Literal, Union
 
 import cv2
 import numpy as np
@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 from datasets.base.scene_dataset import ModelType, SceneDataset
 from datasets.base.split_wrapper import SplitWrapper
-from models.gaussians.basics import *
 from utils.camera import get_interp_novel_trajectories
 from utils.geometry import transform_points
 from utils.misc import export_points_to_ply, import_str

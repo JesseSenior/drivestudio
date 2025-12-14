@@ -9,13 +9,14 @@ import nerfview
 import numpy as np
 import torch
 import viser
+from gsplat.rendering import rasterization
 from omegaconf import OmegaConf
 from pytorch_msssim import SSIM
 from torch import nn
 from torchmetrics.image import PeakSignalNoiseRatio
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
-from models.gaussians.basics import *
+from models.gaussians.basics import dataclass_camera, dataclass_gs
 
 logger = logging.getLogger()
 

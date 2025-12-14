@@ -3,10 +3,18 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
+from gsplat.cuda._wrapper import spherical_harmonics
+from gsplat.cuda_legacy._wrapper import num_sh_bases
 from pytorch3d.ops import knn_points
+from pytorch3d.transforms import matrix_to_quaternion
 from torch.nn import Parameter
 
-from models.gaussians.basics import *
+from models.gaussians.basics import (
+    RGB2SH,
+    dataclass_camera,
+    interpolate_quats,
+    quat_mult,
+)
 from models.gaussians.vanilla import VanillaGaussians
 from models.human_body import (
     SMPLTemplate,

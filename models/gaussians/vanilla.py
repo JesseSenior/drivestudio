@@ -17,11 +17,22 @@ import logging
 from typing import Dict, List, Tuple
 
 import torch
+from gsplat.cuda._wrapper import spherical_harmonics
+from gsplat.cuda_legacy._torch_impl import quat_to_rotmat
+from gsplat.cuda_legacy._wrapper import num_sh_bases
 from omegaconf import OmegaConf
 from torch import nn
 from torch.nn import Parameter
 
-from models.gaussians.basics import *
+from models.gaussians.basics import (
+    RGB2SH,
+    SH2RGB,
+    dataclass_camera,
+    dup_in_optim,
+    k_nearest_sklearn,
+    random_quat_tensor,
+    remove_from_optim,
+)
 
 logger = logging.getLogger()
 

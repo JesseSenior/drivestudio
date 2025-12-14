@@ -2,9 +2,10 @@ import logging
 from typing import Dict, List, Tuple
 
 import torch
+from gsplat.cuda._wrapper import spherical_harmonics
 from torch.nn import Parameter
 
-from models.gaussians.basics import *
+from models.gaussians.basics import dataclass_camera
 from models.modules import ConditionalDeformNetwork
 from models.nodes.rigid import RigidNodes
 

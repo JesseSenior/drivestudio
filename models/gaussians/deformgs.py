@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from torch.nn import Parameter
 
-from models.gaussians.basics import *
+from models.gaussians.basics import dataclass_camera, spherical_harmonics
 from models.gaussians.vanilla import VanillaGaussians
 from models.modules import DeformNetwork
 

@@ -4,13 +4,12 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from sklearn.neighbors import NearestNeighbors
-from pytorch3d.transforms import matrix_to_quaternion  # noqa:F401
-
-from gsplat.rendering import rasterization  # noqa:F401
-from gsplat.cuda_legacy._wrapper import num_sh_bases  # noqa:F401
-from gsplat.cuda_legacy._torch_impl import quat_to_rotmat  # noqa:F401
 from gsplat.cuda._wrapper import spherical_harmonics  # noqa:F401
+from gsplat.cuda_legacy._torch_impl import quat_to_rotmat  # noqa:F401
+from gsplat.cuda_legacy._wrapper import num_sh_bases  # noqa:F401
+from gsplat.rendering import rasterization  # noqa:F401
+from pytorch3d.transforms import matrix_to_quaternion  # noqa:F401
+from sklearn.neighbors import NearestNeighbors
 
 
 def interpolate_quats(q1, q2, fraction=0.5):
