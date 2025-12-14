@@ -30,6 +30,8 @@ class MultiTrainer(BasicTrainer):
             self.gaussian_classes["SMPLNodes"] = GSModelType.SMPLNodes
         if "DeformableNodes" in self.model_config:
             self.gaussian_classes["DeformableNodes"] = GSModelType.DeformableNodes
+        if "NonRigidNodes" in self.model_config:
+            self.gaussian_classes["NonRigidNodes"] = GSModelType.NonRigidNodes
 
         for class_name, model_cfg in self.model_config.items():
             # update model config for gaussian classes
@@ -84,7 +86,7 @@ class MultiTrainer(BasicTrainer):
         dataset: DrivingDataset,
     ) -> None:
         # get instance points
-        rigidnode_pts_dict, deformnode_pts_dict, smplnode_pts_dict = {}, {}, {}
+        rigidnode_pts_dict, deformnode_pts_dict, smplnode_pts_dict, nonrigidnode_pts_dict = {}, {}, {}, {}
         if "RigidNodes" in self.model_config:
             rigidnode_pts_dict = dataset.get_init_objects(
                 cur_node_type="RigidNodes", **self.model_config["RigidNodes"]["init"]
@@ -99,10 +101,17 @@ class MultiTrainer(BasicTrainer):
 
         if "SMPLNodes" in self.model_config:
             smplnode_pts_dict = dataset.get_init_smpl_objects(**self.model_config["SMPLNodes"]["init"])
+
+        if "NonRigidNodes" in self.model_config:
+            nonrigidnode_pts_dict = dataset.get_init_objects(
+                cur_node_type="NonRigidNodes", **self.model_config["NonRigidNodes"]["init"]
+            )
+
         allnode_pts_dict = {
             **rigidnode_pts_dict,
             **deformnode_pts_dict,
             **smplnode_pts_dict,
+            **nonrigidnode_pts_dict,
         }
 
         # NOTE: Some gaussian classes may be empty (because no points for initialization)
@@ -176,6 +185,9 @@ class MultiTrainer(BasicTrainer):
 
             if class_name == "SMPLNodes":
                 empty = self.safe_init_models(model=model, instance_pts_dict=smplnode_pts_dict)
+
+            if class_name == "NonRigidNodes":
+                empty = self.safe_init_models(model=model, instance_pts_dict=nonrigidnode_pts_dict)
 
             if empty:
                 empty_classes.append(class_name)

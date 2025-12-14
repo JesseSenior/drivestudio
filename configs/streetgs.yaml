@@ -109,6 +109,42 @@ model:
       ins_translation:
         lr: 0.0005
         lr_final: 0.0001
+  NonRigidNodes:
+    type: models.nodes.NonRigidNodes
+    init:
+      instance_max_pts: 5000 # max initial points for each instance
+      only_moving: true # only optimize moving instances
+      traj_length_thres: 0.5 # threshold of trajectory length for moving instances
+    networks:
+      D: 8 # DeformNetwork depth
+      W: 256 # DeformNetwork width
+      x_multires: 10 # spatial encoding frequency multiplier
+      t_multires: 10 # temporal encoding frequency multiplier
+    ctrl:
+      coarse_train_interval: 3000 # steps before training deformation network
+      delta_xyz_rescale: true # rescale delta_xyz by scene scale
+      cull_scale_thresh: 0.1
+      stop_screen_size_at: 30000
+      stop_split_at: 20000
+      cull_out_of_bound: false
+    reg:
+      sharp_shape_reg:
+        w: 1.
+        step_interval: 10
+        max_gauss_ratio: 10.
+    optim:
+      xyz:
+        lr: 1.6e-04
+        lr_final: 1.6e-06
+      deform_network:
+        lr: 1.6e-04
+        lr_final: 1.6e-06
+      ins_rotation:
+        lr: 0.00001
+        lr_final: 0.000005
+      ins_translation:
+        lr: 0.0005
+        lr_final: 0.0001
   Sky:
     type: models.modules.EnvLight
     params:
@@ -138,7 +174,7 @@ render:
   fps: 10 # frames per second for the main rendered output
   render_full: True # whether to render full resolution videos
   render_test: True # whether to render test set
-  render_novel: 
+  render_novel:
     traj_types:
       - front_center_interp # type of trajectory for novel view synthesis
     fps: 24 # frames per second for novel view rendering

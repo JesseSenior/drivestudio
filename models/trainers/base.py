@@ -26,6 +26,7 @@ class GSModelType(IntEnum):
     RigidNodes = 1
     SMPLNodes = 2
     DeformableNodes = 3
+    NonRigidNodes = 4
 
 
 def lr_scheduler_fn(cfg: OmegaConf, lr_init: float):
