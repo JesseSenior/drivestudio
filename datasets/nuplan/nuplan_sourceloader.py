@@ -11,9 +11,9 @@ from pytorch3d.transforms import matrix_to_quaternion
 from torch import Tensor
 from tqdm import tqdm, trange
 
-from datasets.base.scene_dataset import ModelType
 from datasets.base.lidar_source import SceneLidarSource
 from datasets.base.pixel_source import CameraData, ScenePixelSource
+from datasets.base.scene_dataset import ModelType
 
 logger = logging.getLogger()
 
@@ -21,15 +21,13 @@ logger = logging.getLogger()
 OBJECT_CLASS_NODE_MAPPING = {
     "vehicle": ModelType.RigidNodes,
     "pedestrian": ModelType.SMPLNodes,
-    "bicycle": ModelType.DeformableNodes
+    "bicycle": ModelType.DeformableNodes,
 }
 SMPLNODE_CLASSES = ["pedestrian"]
 
 # OpenCV to Dataset coordinate transformation
 # opencv coordinate system: x right, y down, z front
-OPENCV2DATASET = np.array(
-    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-)
+OPENCV2DATASET = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
 # NuPlan Camera List:
 # 0: CAM_F0
@@ -42,10 +40,11 @@ OPENCV2DATASET = np.array(
 # 7: CAM_B0
 AVAILABLE_CAM_LIST = [0, 1, 2, 3, 4, 5, 6, 7]
 
+
 class NuPlanCameraData(CameraData):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+
     def load_calibrations(self):
         """
         Load the camera intrinsics, extrinsics, timestamps, etc.
@@ -55,11 +54,15 @@ class NuPlanCameraData(CameraData):
         # 1d Array of [f_u, f_v, c_u, c_v, k{1, 2}, p{1, 2}, k{3}].
         # ====!! we did not use distortion parameters for simplicity !!====
         # to be improved!!
-        intrinsic = np.loadtxt(
-            os.path.join(self.data_path, "intrinsics", f"{self.cam_id}.txt")
-        )
+        intrinsic = np.loadtxt(os.path.join(self.data_path, "intrinsics", f"{self.cam_id}.txt"))
         fx, fy, cx, cy = intrinsic[0], intrinsic[1], intrinsic[2], intrinsic[3]
-        k1, k2, p1, p2, k3 = intrinsic[4], intrinsic[5], intrinsic[6], intrinsic[7], intrinsic[8]
+        k1, k2, p1, p2, k3 = (
+            intrinsic[4],
+            intrinsic[5],
+            intrinsic[6],
+            intrinsic[7],
+            intrinsic[8],
+        )
         # scale intrinsics w.r.t. load size
         fx, fy = (
             fx * self.load_size[1] / self.original_size[1],
@@ -73,9 +76,7 @@ class NuPlanCameraData(CameraData):
         _distortions = np.array([k1, k2, p1, p2, k3])
 
         # load camera extrinsics
-        cam_to_ego = np.loadtxt(
-            os.path.join(self.data_path, "extrinsics", f"{self.cam_id}.txt")
-        )
+        cam_to_ego = np.loadtxt(os.path.join(self.data_path, "extrinsics", f"{self.cam_id}.txt"))
         cam_to_ego = cam_to_ego @ OPENCV2DATASET
 
         # compute per-image poses and intrinsics
@@ -84,13 +85,9 @@ class NuPlanCameraData(CameraData):
 
         # we tranform the camera poses w.r.t. the first timestep to make the translation vector of
         # the first ego pose as the origin of the world coordinate system.
-        ego_to_world_start = np.loadtxt(
-            os.path.join(self.data_path, "ego_pose", f"{self.start_timestep:03d}.txt")
-        )
+        ego_to_world_start = np.loadtxt(os.path.join(self.data_path, "ego_pose", f"{self.start_timestep:03d}.txt"))
         for t in range(self.start_timestep, self.end_timestep):
-            ego_to_world_current = np.loadtxt(
-                os.path.join(self.data_path, "ego_pose", f"{t:03d}.txt")
-            )
+            ego_to_world_current = np.loadtxt(os.path.join(self.data_path, "ego_pose", f"{t:03d}.txt"))
             # compute ego_to_world transformation
             ego_to_world = np.linalg.inv(ego_to_world_start) @ ego_to_world_current
             ego_to_worlds.append(ego_to_world)
@@ -118,34 +115,29 @@ class NuPlanCameraData(CameraData):
             torch.Tensor: Camera-to-world matrices of shape (num_frames, 4, 4).
         """
         # Load the camera-to-ego transformation (this is constant for NuPlan)
-        cam_to_ego = np.loadtxt(
-            os.path.join(data_path, "extrinsics", f"{cam_id}.txt")
-        )
+        cam_to_ego = np.loadtxt(os.path.join(data_path, "extrinsics", f"{cam_id}.txt"))
         cam_to_ego = cam_to_ego @ OPENCV2DATASET
-        
+
         # Load the initial ego pose to align the world coordinate system
-        ego_to_world_start = np.loadtxt(
-            os.path.join(data_path, "ego_pose", f"{start_timestep:03d}.txt")
-        )
+        ego_to_world_start = np.loadtxt(os.path.join(data_path, "ego_pose", f"{start_timestep:03d}.txt"))
 
         cam_to_worlds = []
-        
+
         for t in range(start_timestep, end_timestep):
             # Load ego pose for each timestep
-            ego_to_world_current = np.loadtxt(
-                os.path.join(data_path, "ego_pose", f"{t:03d}.txt")
-            )
-            
+            ego_to_world_current = np.loadtxt(os.path.join(data_path, "ego_pose", f"{t:03d}.txt"))
+
             # Compute ego_to_world transformation relative to the start
             ego_to_world = np.linalg.inv(ego_to_world_start) @ ego_to_world_current
-            
+
             # Compute camera-to-world transformation
             cam2world = ego_to_world @ cam_to_ego
-            
+
             cam_to_worlds.append(cam2world)
 
         return torch.from_numpy(np.stack(cam_to_worlds, axis=0)).float()
-        
+
+
 class NuPlanPixelSource(ScenePixelSource):
     def __init__(
         self,
@@ -183,13 +175,10 @@ class NuPlanPixelSource(ScenePixelSource):
             )
             camera.load_time(self.normalized_time)
             unique_img_idx = torch.arange(len(camera), device=self.device) * len(self.camera_list) + idx
-            camera.set_unique_ids(
-                unique_cam_idx = idx,
-                unique_img_idx = unique_img_idx
-            )
+            camera.set_unique_ids(unique_cam_idx=idx, unique_img_idx=unique_img_idx)
             logger.info(f"Camera {camera.cam_name} loaded.")
             self.camera_data[cam_id] = camera
-    
+
     def load_objects(self):
         """
         get ground truth bounding boxes of the dynamic objects
@@ -226,32 +215,36 @@ class NuPlanPixelSource(ScenePixelSource):
         instances_size = np.zeros((num_full_frames, num_instances, 3))
         instances_true_id = np.arange(num_instances)
         instances_model_types = np.ones(num_instances) * -1
-        
-        ego_to_world_start = np.loadtxt(
-            os.path.join(self.data_path, "ego_pose", f"{self.start_timestep:03d}.txt")
-        )
+
+        ego_to_world_start = np.loadtxt(os.path.join(self.data_path, "ego_pose", f"{self.start_timestep:03d}.txt"))
         for k, v in instances_info.items():
             instances_model_types[int(k)] = OBJECT_CLASS_NODE_MAPPING[v["class_name"]]
-            for frame_idx, obj_to_world, box_size in zip(v["frame_annotations"]["frame_idx"], v["frame_annotations"]["obj_to_world"], v["frame_annotations"]["box_size"]):
+            for frame_idx, obj_to_world, box_size in zip(
+                v["frame_annotations"]["frame_idx"],
+                v["frame_annotations"]["obj_to_world"],
+                v["frame_annotations"]["box_size"],
+            ):
                 # the first ego pose as the origin of the world coordinate system.
                 obj_to_world = np.array(obj_to_world).reshape(4, 4)
                 obj_to_world = np.linalg.inv(ego_to_world_start) @ obj_to_world
                 instances_pose[frame_idx, int(k)] = np.array(obj_to_world)
                 instances_size[frame_idx, int(k)] = np.array(box_size)
-        
+
         # get frame valid instances
         # shape (num_frames, num_instances)
         per_frame_instance_mask = np.zeros((num_full_frames, num_instances))
         for frame_idx, valid_instances in frame_instances.items():
             per_frame_instance_mask[int(frame_idx), valid_instances] = 1
-        
+
         # select the frames that are in the range of start_timestep and end_timestep
-        instances_pose = torch.from_numpy(instances_pose[self.start_timestep:self.end_timestep]).float()
-        instances_size = torch.from_numpy(instances_size[self.start_timestep:self.end_timestep]).float()
+        instances_pose = torch.from_numpy(instances_pose[self.start_timestep : self.end_timestep]).float()
+        instances_size = torch.from_numpy(instances_size[self.start_timestep : self.end_timestep]).float()
         instances_true_id = torch.from_numpy(instances_true_id).long()
         instances_model_types = torch.from_numpy(instances_model_types).long()
-        per_frame_instance_mask = torch.from_numpy(per_frame_instance_mask[self.start_timestep:self.end_timestep]).bool()
-        
+        per_frame_instance_mask = torch.from_numpy(
+            per_frame_instance_mask[self.start_timestep : self.end_timestep]
+        ).bool()
+
         # filter out the instances that are not visible in selected frames
         ins_frame_cnt = per_frame_instance_mask.sum(dim=0)
         instances_pose = instances_pose[:, ins_frame_cnt > 0]
@@ -259,7 +252,7 @@ class NuPlanPixelSource(ScenePixelSource):
         instances_true_id = instances_true_id[ins_frame_cnt > 0]
         instances_model_types = instances_model_types[ins_frame_cnt > 0]
         per_frame_instance_mask = per_frame_instance_mask[:, ins_frame_cnt > 0]
-        
+
         # assign to the class
         # (num_frames, num_instances, 4, 4)
         self.instances_pose = instances_pose
@@ -277,16 +270,13 @@ class NuPlanPixelSource(ScenePixelSource):
             cam_to_worlds = {}
             for cam_id in AVAILABLE_CAM_LIST:
                 cam_to_worlds[cam_id] = NuPlanCameraData.get_camera2worlds(
-                    self.data_path, 
-                    str(cam_id), 
-                    self.start_timestep, 
-                    self.end_timestep
+                    self.data_path, str(cam_id), self.start_timestep, self.end_timestep
                 )
 
             # load SMPL parameters
             smpl_dict = joblib.load(os.path.join(self.data_path, "humanpose", "smpl.pkl"))
             frame_num = self.end_timestep - self.start_timestep
-            
+
             smpl_human_all = {}
             for fi in tqdm(range(self.start_timestep, self.end_timestep), desc="Loading SMPL"):
                 for instance_id, ins_smpl in smpl_dict.items():
@@ -295,38 +285,33 @@ class NuPlanPixelSource(ScenePixelSource):
                             "smpl_quats": torch.zeros((frame_num, 24, 4), dtype=torch.float32),
                             "smpl_trans": torch.zeros((frame_num, 3), dtype=torch.float32),
                             "smpl_betas": torch.zeros((frame_num, 10), dtype=torch.float32),
-                            "frame_valid": torch.zeros((frame_num), dtype=torch.bool)
+                            "frame_valid": torch.zeros((frame_num), dtype=torch.bool),
                         }
                         smpl_human_all[instance_id]["smpl_quats"][:, :, 0] = 1.0
                     if ins_smpl["valid_mask"][fi]:
                         betas = ins_smpl["smpl"]["betas"][fi]
                         smpl_human_all[instance_id]["smpl_betas"][fi - self.start_timestep] = betas
-                        
+
                         body_pose = ins_smpl["smpl"]["body_pose"][fi]
                         smpl_orient = ins_smpl["smpl"]["global_orient"][fi]
                         cam_depend = ins_smpl["selected_cam_idx"][fi].item()
-                        
+
                         c2w = cam_to_worlds[cam_depend][fi - self.start_timestep]
                         world_orient = c2w[:3, :3].to(smpl_orient.device) @ smpl_orient.squeeze()
-                        smpl_quats = matrix_to_quaternion(
-                            torch.cat([world_orient[None, ...], body_pose], dim=0)
-                        )
-                        
-                        ii = instances_info[str(instance_id)]['frame_annotations']["frame_idx"].index(fi)
-                        o2w = np.array(
-                            instances_info[str(instance_id)]['frame_annotations']["obj_to_world"][ii]
-                        )
-                        o2w = torch.from_numpy(
-                            np.linalg.inv(ego_to_world_start) @ o2w
-                        )
+                        smpl_quats = matrix_to_quaternion(torch.cat([world_orient[None, ...], body_pose], dim=0))
+
+                        ii = instances_info[str(instance_id)]["frame_annotations"]["frame_idx"].index(fi)
+                        o2w = np.array(instances_info[str(instance_id)]["frame_annotations"]["obj_to_world"][ii])
+                        o2w = torch.from_numpy(np.linalg.inv(ego_to_world_start) @ o2w)
                         # box_size = instances_info[str(instance_id)]['frame_annotations']["box_size"][ii]
-                        
+
                         smpl_human_all[instance_id]["smpl_quats"][fi - self.start_timestep] = smpl_quats
                         smpl_human_all[instance_id]["smpl_trans"][fi - self.start_timestep] = o2w[:3, 3]
                         smpl_human_all[instance_id]["frame_valid"][fi - self.start_timestep] = True
 
             self.smpl_human_all = smpl_human_all
-            
+
+
 class NuPlanLiDARSource(SceneLidarSource):
     def __init__(
         self,
@@ -350,9 +335,7 @@ class NuPlanLiDARSource(SceneLidarSource):
         """
         lidar_filepaths = []
         for t in range(self.start_timestep, self.end_timestep):
-            lidar_filepaths.append(
-                os.path.join(self.data_path, "lidar", f"{t:03d}.bin")
-            )
+            lidar_filepaths.append(os.path.join(self.data_path, "lidar", f"{t:03d}.bin"))
         self.lidar_filepaths = np.array(lidar_filepaths)
 
     def load_calibrations(self):
@@ -366,20 +349,14 @@ class NuPlanLiDARSource(SceneLidarSource):
 
         # we tranform the poses w.r.t. the first timestep to make the origin of the
         # first ego pose as the origin of the world coordinate system.
-        ego_to_world_start = np.loadtxt(
-            os.path.join(self.data_path, "ego_pose", f"{self.start_timestep:03d}.txt")
-        )
+        ego_to_world_start = np.loadtxt(os.path.join(self.data_path, "ego_pose", f"{self.start_timestep:03d}.txt"))
         for t in range(self.start_timestep, self.end_timestep):
-            ego_to_world_current = np.loadtxt(
-                os.path.join(self.data_path, "ego_pose", f"{t:03d}.txt")
-            )
+            ego_to_world_current = np.loadtxt(os.path.join(self.data_path, "ego_pose", f"{t:03d}.txt"))
             # compute ego_to_world transformation
             lidar_to_world = np.linalg.inv(ego_to_world_start) @ ego_to_world_current
             lidar_to_worlds.append(lidar_to_world)
 
-        self.lidar_to_worlds = torch.from_numpy(
-            np.stack(lidar_to_worlds, axis=0)
-        ).float()
+        self.lidar_to_worlds = torch.from_numpy(np.stack(lidar_to_worlds, axis=0)).float()
 
     def load_lidar(self):
         """
@@ -391,9 +368,7 @@ class NuPlanLiDARSource(SceneLidarSource):
 
         accumulated_num_original_rays = 0
         accumulated_num_rays = 0
-        for t in trange(
-            0, len(self.lidar_filepaths), desc="Loading lidar", dynamic_ncols=True
-        ):
+        for t in trange(0, len(self.lidar_filepaths), desc="Loading lidar", dynamic_ncols=True):
             # each lidar_info contains an Nx4 array
             # from left to right:
             # points: 3d, intensity: 1d, ring: 1d, lidar_id: 1d
@@ -414,14 +389,8 @@ class NuPlanLiDARSource(SceneLidarSource):
             lidar_ids = torch.from_numpy(lidar_info[:, 5]).float()
 
             # transform lidar points from lidar coordinate system to world coordinate system
-            lidar_origins = (
-                self.lidar_to_worlds[t][:3, :3] @ lidar_origins.T
-                + self.lidar_to_worlds[t][:3, 3:4]
-            ).T
-            lidar_points = (
-                self.lidar_to_worlds[t][:3, :3] @ lidar_points.T
-                + self.lidar_to_worlds[t][:3, 3:4]
-            ).T
+            lidar_origins = (self.lidar_to_worlds[t][:3, :3] @ lidar_origins.T + self.lidar_to_worlds[t][:3, 3:4]).T
+            lidar_points = (self.lidar_to_worlds[t][:3, :3] @ lidar_points.T + self.lidar_to_worlds[t][:3, 3:4]).T
             # compute lidar directions
             lidar_directions = lidar_points - lidar_origins
             lidar_ranges = torch.norm(lidar_directions, dim=-1, keepdim=True)

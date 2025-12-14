@@ -1,20 +1,23 @@
 import sqlite3
+from dataclasses import dataclass
 from typing import Generator
 
 import numpy as np
-from dataclasses import dataclass
-from pyquaternion import Quaternion
-
 from nuplan.common.actor_state.agent import Agent
 from nuplan.common.actor_state.oriented_box import OrientedBox
 from nuplan.common.actor_state.scene_object import SceneObjectMetadata
 from nuplan.common.actor_state.state_representation import StateSE2, StateVector2D
 from nuplan.common.actor_state.static_object import StaticObject
 from nuplan.common.actor_state.tracked_objects import TrackedObject
-from nuplan.common.actor_state.tracked_objects_types import AGENT_TYPES, TrackedObjectType
+from nuplan.common.actor_state.tracked_objects_types import (
+    AGENT_TYPES,
+    TrackedObjectType,
+)
 from nuplan.common.utils.helpers import get_unique_incremental_track_id
 from nuplan.database.nuplan_db.query_session import execute_many, execute_one
 from nuplan.database.utils.label.utils import local2agent_type, raw_mapping
+from pyquaternion import Quaternion
+
 
 @dataclass
 class SimplifiedTrackedObject:
@@ -22,6 +25,7 @@ class SimplifiedTrackedObject:
     category: str
     pose: np.array
     box_size: np.array
+
 
 def _parse_tracked_object_row(row: sqlite3.Row) -> SimplifiedTrackedObject:
     """
@@ -38,7 +42,7 @@ def _parse_tracked_object_row(row: sqlite3.Row) -> SimplifiedTrackedObject:
     tracked_object_type = TrackedObjectType[local2agent_type[label_local]]
 
     if tracked_object_type in AGENT_TYPES:
-        obj =  Agent(
+        obj = Agent(
             tracked_object_type=tracked_object_type,
             oriented_box=oriented_box,
             velocity=StateVector2D(row["vx"], row["vy"]),
@@ -64,21 +68,22 @@ def _parse_tracked_object_row(row: sqlite3.Row) -> SimplifiedTrackedObject:
                 category_name=category_name,
             ),
         )
-    
+
     # object pose in 3D space
-    obj_pose3d = obj.box.center.as_matrix_3d() # StateSE2 to np.array
-    obj_pose3d[2, 3] = row["z"] # add z to the pose to get 3D pose
-    
+    obj_pose3d = obj.box.center.as_matrix_3d()  # StateSE2 to np.array
+    obj_pose3d[2, 3] = row["z"]  # add z to the pose to get 3D pose
+
     # box_size is [l, w, h]
     l, w, h = obj.box.length, obj.box.width, obj.box.height
     box_size = np.array([l, w, h])
-    
+
     return SimplifiedTrackedObject(
         category=tracked_object_type.name.lower(),
         pose=obj_pose3d,
         box_size=box_size,
-        track_token=row["track_token"].hex()
+        track_token=row["track_token"].hex(),
     )
+
 
 def get_egopose3d_for_lidarpc_token_from_db(log_file: str, token: str) -> np.array:
     """
@@ -108,12 +113,13 @@ def get_egopose3d_for_lidarpc_token_from_db(log_file: str, token: str) -> np.arr
     q = Quaternion(row["qw"], row["qx"], row["qy"], row["qz"])
     rotation = q.rotation_matrix
     translation = np.array([row["x"], row["y"], row["z"]])
-    
+
     ego_pose = np.eye(4)
     ego_pose[:3, :3] = rotation
     ego_pose[:3, 3] = translation
-    
+
     return ego_pose
+
 
 def get_tracked_objects_for_lidarpc_token_from_db(log_file: str, token: str) -> Generator[TrackedObject, None, None]:
     """

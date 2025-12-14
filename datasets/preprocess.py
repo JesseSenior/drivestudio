@@ -1,4 +1,5 @@
 import argparse
+
 import numpy as np
 
 if __name__ == "__main__":
@@ -27,7 +28,7 @@ if __name__ == "__main__":
         --start_idx <start_idx> \
         --num_scenes <num_scenes> \
         --process_keys <process_keys>
-    
+
     Example:
     --------
     Waymo:
@@ -38,7 +39,7 @@ if __name__ == "__main__":
         --process_keys images lidar calib pose dynamic_masks objects \
         --workers 8 \
         --scene_ids 23 114 327 621 703 172 552 788
-    
+
     PandaSet:
     python datasets/preprocess.py \
         --data_root data/pandaset/raw \
@@ -47,7 +48,7 @@ if __name__ == "__main__":
         --target_dir data/pandaset/processed \
         --workers 32 \
         --process_keys images lidar calib pose dynamic_masks objects
-    
+
     Please refer to the documentation for more information on the available options.
 
     Arguments:
@@ -81,14 +82,12 @@ if __name__ == "__main__":
 
     Notes:
     ------
-    The logic of the script ensures that if specific scene IDs (`scene_ids`) are provided, they are prioritized. 
-    If a split file (`split_file`) is indicated, it is utilized next. 
+    The logic of the script ensures that if specific scene IDs (`scene_ids`) are provided, they are prioritized.
+    If a split file (`split_file`) is indicated, it is utilized next.
     If neither is available, the script uses the `start_idx` and `num_scenes` parameters to determine the scene IDs.
     """
     parser = argparse.ArgumentParser(description="Data converter arg parser")
-    parser.add_argument(
-        "--data_root", type=str, required=True, help="root path of dataset"
-    )
+    parser.add_argument("--data_root", type=str, required=True, help="root path of dataset")
     parser.add_argument("--dataset", type=str, default="waymo", help="dataset name")
     parser.add_argument(
         "--split",
@@ -102,9 +101,7 @@ if __name__ == "__main__":
         required=True,
         help="output directory of processed data",
     )
-    parser.add_argument(
-        "--workers", type=int, default=4, help="number of threads to be used"
-    )
+    parser.add_argument("--workers", type=int, default=4, help="number of threads to be used")
     # priority: scene_ids > split_file > start_idx + num_scenes
     parser.add_argument(
         "--scene_ids",
@@ -113,9 +110,7 @@ if __name__ == "__main__":
         nargs="+",
         help="scene ids to be processed, a list of integers separated by space. Range: [0, 798] for training, [0, 202] for validation",
     )
-    parser.add_argument(
-        "--split_file", type=str, default=None, help="Split file in data/waymo_splits"
-    )
+    parser.add_argument("--split_file", type=str, default=None, help="Split file in data/waymo_splits")
     parser.add_argument(
         "--start_idx",
         type=int,
@@ -151,19 +146,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--process_keys",
         nargs="+",
-        default=[
-            "images",
-            "lidar",
-            "calib",
-            "pose",
-            "dynamic_masks",
-            "objects"
-        ],
+        default=["images", "lidar", "calib", "pose", "dynamic_masks", "objects"],
     )
     args = parser.parse_args()
-    if args.dataset != 'nuscenes' and args.interpolate_N > 0:
+    if args.dataset != "nuscenes" and args.interpolate_N > 0:
         parser.error("interpolate_N > 0 is only allowed when dataset is 'nuscenes'")
-    
+
     if args.scene_ids is not None:
         scene_ids_list = args.scene_ids
     elif args.split_file is not None:
@@ -175,7 +163,7 @@ if __name__ == "__main__":
 
     if args.dataset == "waymo":
         from datasets.waymo.waymo_preprocess import WaymoProcessor
-        
+
         scene_ids_list = [int(scene_id) for scene_id in scene_ids_list]
         dataset_processor = WaymoProcessor(
             load_dir=args.data_root,
@@ -187,7 +175,7 @@ if __name__ == "__main__":
         )
     elif args.dataset == "pandaset":
         from datasets.pandaset.pandaset_preprocess import PandaSetProcessor
-        
+
         scene_ids_list = [str(scene_id).zfill(3) for scene_id in scene_ids_list]
         dataset_processor = PandaSetProcessor(
             load_dir=args.data_root,
@@ -198,7 +186,7 @@ if __name__ == "__main__":
         )
     elif args.dataset == "argoverse":
         from datasets.argoverse.argoverse_preprocess import ArgoVerseProcessor
-        
+
         scene_ids_list = [int(scene_id) for scene_id in scene_ids_list]
         dataset_processor = ArgoVerseProcessor(
             load_dir=args.data_root,
@@ -209,7 +197,7 @@ if __name__ == "__main__":
         )
     elif args.dataset == "nuscenes":
         from datasets.nuscenes.nuscenes_preprocess import NuScenesProcessor
-        
+
         scene_ids_list = [int(scene_id) for scene_id in scene_ids_list]
         dataset_processor = NuScenesProcessor(
             load_dir=args.data_root,
@@ -222,7 +210,7 @@ if __name__ == "__main__":
         )
     elif args.dataset == "kitti":
         from datasets.kitti.kitti_preprocess import KittiProcessor
-        
+
         dataset_processor = KittiProcessor(
             load_dir=args.data_root,
             save_dir=args.target_dir,
@@ -233,7 +221,7 @@ if __name__ == "__main__":
         )
     elif args.dataset == "nuplan":
         from datasets.nuplan.nuplan_preprocess import NuPlanProcessor
-        
+
         dataset_processor = NuPlanProcessor(
             load_dir=args.data_root,
             save_dir=args.target_dir,
@@ -245,7 +233,9 @@ if __name__ == "__main__":
             workers=args.workers,
         )
     else:
-        raise ValueError(f"Unknown dataset {args.dataset}, please choose from waymo, pandaset, argoverse, nuscenes, kitti, nuplan")
+        raise ValueError(
+            f"Unknown dataset {args.dataset}, please choose from waymo, pandaset, argoverse, nuscenes, kitti, nuplan"
+        )
 
     if args.scene_ids is not None and args.workers == 1:
         for scene_id in args.scene_ids:

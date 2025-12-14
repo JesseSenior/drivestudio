@@ -12,14 +12,16 @@ import hashlib
 from typing import List, Optional, Tuple
 
 import cv2
-import matplotlib.cm as cm
 import numpy as np
 import torch
+from matplotlib import cm
+
 
 def to8b(x):
     if isinstance(x, torch.Tensor):
         x = x.detach().cpu().numpy()
     return (255 * np.clip(x, 0, 1)).astype(np.uint8)
+
 
 def get_layout(dataset_type: str):
     if dataset_type == "waymo":
@@ -38,9 +40,8 @@ def get_layout(dataset_type: str):
         raise ValueError(f"dataset_type {dataset_type} not supported")
     return layout
 
-def layout_nuplan(
-    imgs: List[np.array], cam_names: List[str]
-) -> np.array:
+
+def layout_nuplan(imgs: List[np.array], cam_names: List[str]) -> np.array:
     """Combine cameras into a tiled image for NuPlan dataset.
     Layout:
     ##############################################
@@ -59,44 +60,43 @@ def layout_nuplan(
     tiled_width = width * 3
     tiled_img = np.zeros((tiled_height, tiled_width, channel), dtype=np.float32)
     filled_mask = np.zeros((tiled_height, tiled_width), dtype=np.uint8)
-    
+
     for idx, cam_name in enumerate(cam_names):
         img = imgs[idx]
         if cam_name == "CAM_F0":
-            tiled_img[:height, width:2*width] = img
-            filled_mask[:height, width:2*width] = 1
+            tiled_img[:height, width : 2 * width] = img
+            filled_mask[:height, width : 2 * width] = 1
         elif cam_name == "CAM_L0":
             tiled_img[:height, :width] = img
             filled_mask[:height, :width] = 1
         elif cam_name == "CAM_R0":
-            tiled_img[:height, 2*width:] = img
-            filled_mask[:height, 2*width:] = 1
+            tiled_img[:height, 2 * width :] = img
+            filled_mask[:height, 2 * width :] = 1
         elif cam_name == "CAM_L1":
-            tiled_img[height:2*height, :width] = img
-            filled_mask[height:2*height, :width] = 1
+            tiled_img[height : 2 * height, :width] = img
+            filled_mask[height : 2 * height, :width] = 1
         elif cam_name == "CAM_R1":
-            tiled_img[height:2*height, 2*width:] = img
-            filled_mask[height:2*height, 2*width:] = 1
+            tiled_img[height : 2 * height, 2 * width :] = img
+            filled_mask[height : 2 * height, 2 * width :] = 1
         elif cam_name == "CAM_L2":
-            tiled_img[2*height:, :width] = img
-            filled_mask[2*height:, :width] = 1
+            tiled_img[2 * height :, :width] = img
+            filled_mask[2 * height :, :width] = 1
         elif cam_name == "CAM_R2":
-            tiled_img[2*height:, 2*width:] = img
-            filled_mask[2*height:, 2*width:] = 1
+            tiled_img[2 * height :, 2 * width :] = img
+            filled_mask[2 * height :, 2 * width :] = 1
         elif cam_name == "CAM_B0":
-            tiled_img[2*height:, width:2*width] = img
-            filled_mask[2*height:, width:2*width] = 1
+            tiled_img[2 * height :, width : 2 * width] = img
+            filled_mask[2 * height :, width : 2 * width] = 1
 
     # Crop the image according to the largest filled area
     min_y, max_y = np.where(filled_mask)[0].min(), np.where(filled_mask)[0].max()
     min_x, max_x = np.where(filled_mask)[1].min(), np.where(filled_mask)[1].max()
-    tiled_img = tiled_img[min_y:max_y+1, min_x:max_x+1]
-    
+    tiled_img = tiled_img[min_y : max_y + 1, min_x : max_x + 1]
+
     return tiled_img
 
-def layout_waymo(
-    imgs: List[np.array], cam_names: List[str]
-) -> np.array:
+
+def layout_waymo(imgs: List[np.array], cam_names: List[str]) -> np.array:
     """Combine cameras into a tiled image.
     Layout:
 
@@ -105,20 +105,20 @@ def layout_waymo(
         ######################################################################################
     """
     channel = imgs[0].shape[-1]
-    front_cam_idx = cam_names.index('front_camera')
+    front_cam_idx = cam_names.index("front_camera")
     front_img = imgs[front_cam_idx]
     landscape_width, landscape_height = front_img.shape[1], front_img.shape[0]
-    
+
     height = landscape_height
     width = landscape_width * 5
     tiled_img = np.zeros((height, width, channel), dtype=np.float32)
     filled_mask = np.zeros((height, width), dtype=np.uint8)
-    
+
     for idx, cam_name in enumerate(cam_names):
         img = imgs[idx]
         if cam_name == "left_camera":
-            tiled_img[landscape_height - img.shape[0]:, :landscape_width] = img
-            filled_mask[landscape_height - img.shape[0]:, :landscape_width] = 1
+            tiled_img[landscape_height - img.shape[0] :, :landscape_width] = img
+            filled_mask[landscape_height - img.shape[0] :, :landscape_width] = 1
         elif cam_name == "front_left_camera":
             tiled_img[:, landscape_width : 2 * landscape_width] = img
             filled_mask[:, landscape_width : 2 * landscape_width] = 1
@@ -129,18 +129,17 @@ def layout_waymo(
             tiled_img[:, 3 * landscape_width : 4 * landscape_width] = img
             filled_mask[:, 3 * landscape_width : 4 * landscape_width] = 1
         elif cam_name == "right_camera":
-            tiled_img[landscape_height - img.shape[0]:, 4 * landscape_width :] = img
-            filled_mask[landscape_height - img.shape[0]:, 4 * landscape_width :] = 1
-    
+            tiled_img[landscape_height - img.shape[0] :, 4 * landscape_width :] = img
+            filled_mask[landscape_height - img.shape[0] :, 4 * landscape_width :] = 1
+
     # crop the image according to the lagrest filled area
     min_y, max_y = np.where(filled_mask)[0].min(), np.where(filled_mask)[0].max()
     min_x, max_x = np.where(filled_mask)[1].min(), np.where(filled_mask)[1].max()
     tiled_img = tiled_img[min_y:max_y, min_x:max_x]
     return tiled_img
 
-def layout_nuscenes(
-    imgs: List[np.array], cam_names: List[str]
-) -> np.array:
+
+def layout_nuscenes(imgs: List[np.array], cam_names: List[str]) -> np.array:
     """Combine cameras into a tiled image.
     Layout:
 
@@ -160,7 +159,7 @@ def layout_nuscenes(
     width = landscape_width * 3
     tiled_img = np.zeros((height, width, channel), dtype=np.float32)
     filled_mask = np.zeros((height, width), dtype=np.uint8)
-    
+
     for idx, cam_name in enumerate(cam_names):
         img = imgs[idx]
         if cam_name == "CAM_FRONT_LEFT":
@@ -173,24 +172,23 @@ def layout_nuscenes(
             tiled_img[:landscape_height, 2 * landscape_width :] = img
             filled_mask[:landscape_height, 2 * landscape_width :] = 1
         elif cam_name == "CAM_BACK_LEFT":
-            tiled_img[landscape_height :, :landscape_width] = img
-            filled_mask[landscape_height :, :landscape_width] = 1
+            tiled_img[landscape_height:, :landscape_width] = img
+            filled_mask[landscape_height:, :landscape_width] = 1
         elif cam_name == "CAM_BACK":
-            tiled_img[landscape_height :, landscape_width : 2 * landscape_width] = img
-            filled_mask[landscape_height :, landscape_width : 2 * landscape_width] = 1
+            tiled_img[landscape_height:, landscape_width : 2 * landscape_width] = img
+            filled_mask[landscape_height:, landscape_width : 2 * landscape_width] = 1
         elif cam_name == "CAM_BACK_RIGHT":
-            tiled_img[landscape_height :, 2 * landscape_width :] = img
-            filled_mask[landscape_height :, 2 * landscape_width :] = 1
-    
+            tiled_img[landscape_height:, 2 * landscape_width :] = img
+            filled_mask[landscape_height:, 2 * landscape_width :] = 1
+
     # crop the image according to the largest filled area
     min_y, max_y = np.where(filled_mask)[0].min(), np.where(filled_mask)[0].max()
     min_x, max_x = np.where(filled_mask)[1].min(), np.where(filled_mask)[1].max()
     tiled_img = tiled_img[min_y:max_y, min_x:max_x]
     return tiled_img
 
-def layout_pandaset(
-    imgs: List[np.array], cam_names: List[str]
-) -> np.array:
+
+def layout_pandaset(imgs: List[np.array], cam_names: List[str]) -> np.array:
     """Combine cameras into a tiled image.
     Layout:
 
@@ -210,7 +208,7 @@ def layout_pandaset(
     width = landscape_width + landscape_width + landscape_width
     tiled_img = np.zeros((height, width, channel), dtype=np.float32)
     filled_mask = np.zeros((height, width), dtype=np.uint8)
-    
+
     for idx, cam_name in enumerate(cam_names):
         img = imgs[idx]
         if cam_name == "front_left_camera":
@@ -223,24 +221,23 @@ def layout_pandaset(
             tiled_img[:landscape_height, 2 * landscape_width :] = img
             filled_mask[:landscape_height, 2 * landscape_width :] = 1
         elif cam_name == "left_camera":
-            tiled_img[landscape_height :, :landscape_width] = img
-            filled_mask[landscape_height :, :landscape_width] = 1
+            tiled_img[landscape_height:, :landscape_width] = img
+            filled_mask[landscape_height:, :landscape_width] = 1
         elif cam_name == "back_camera":
-            tiled_img[landscape_height :, landscape_width : 2 * landscape_width] = img
-            filled_mask[landscape_height :, landscape_width : 2 * landscape_width] = 1
+            tiled_img[landscape_height:, landscape_width : 2 * landscape_width] = img
+            filled_mask[landscape_height:, landscape_width : 2 * landscape_width] = 1
         elif cam_name == "right_camera":
-            tiled_img[landscape_height :, 2 * landscape_width :] = img
-            filled_mask[landscape_height :, 2 * landscape_width :] = 1
-    
+            tiled_img[landscape_height:, 2 * landscape_width :] = img
+            filled_mask[landscape_height:, 2 * landscape_width :] = 1
+
     # crop the image according to the lagrest filled area
     min_y, max_y = np.where(filled_mask)[0].min(), np.where(filled_mask)[0].max()
     min_x, max_x = np.where(filled_mask)[1].min(), np.where(filled_mask)[1].max()
     tiled_img = tiled_img[min_y:max_y, min_x:max_x]
     return tiled_img
 
-def layout_kitti(
-    imgs: List[np.array], cam_names: List[str]
-) -> np.array:
+
+def layout_kitti(imgs: List[np.array], cam_names: List[str]) -> np.array:
     """Combine cameras into a tiled image.
     Layout:
 
@@ -251,29 +248,28 @@ def layout_kitti(
     channel = imgs[0].shape[-1]
     height = imgs[0].shape[0]
     width = imgs[0].shape[1] * 2
-    
+
     tiled_img = np.zeros((height, width, channel), dtype=np.float32)
     filled_mask = np.zeros((height, width), dtype=np.uint8)
-    
+
     for idx, cam_name in enumerate(cam_names):
         img = imgs[idx]
         if cam_name == "CAM_LEFT":
-            tiled_img[:, :img.shape[1]] = img
-            filled_mask[:, :img.shape[1]] = 1
+            tiled_img[:, : img.shape[1]] = img
+            filled_mask[:, : img.shape[1]] = 1
         elif cam_name == "CAM_RIGHT":
-            tiled_img[:, img.shape[1]:] = img
-            filled_mask[:, img.shape[1]:] = 1
-    
+            tiled_img[:, img.shape[1] :] = img
+            filled_mask[:, img.shape[1] :] = 1
+
     # crop the image according to the largest filled area
     min_y, max_y = np.where(filled_mask)[0].min(), np.where(filled_mask)[0].max()
     min_x, max_x = np.where(filled_mask)[1].min(), np.where(filled_mask)[1].max()
     tiled_img = tiled_img[min_y:max_y, min_x:max_x]
-    
+
     return tiled_img
 
-def layout_argoverse(
-    imgs: List[np.array], cam_names: List[str]
-) -> np.array:
+
+def layout_argoverse(imgs: List[np.array], cam_names: List[str]) -> np.array:
     """Combine cameras into a tiled image.
     Layout:
 
@@ -295,14 +291,16 @@ def layout_argoverse(
     width = landscape_width + landscape_height + landscape_width
     tiled_img = np.zeros((height, width, channel), dtype=np.float32)
     filled_mask = np.zeros((height, width), dtype=np.uint8)
-    
+
     for idx, cam_name in enumerate(cam_names):
         img = imgs[idx]
         if cam_name == "ring_front_left":
             tiled_img[:landscape_height, :landscape_width] = img
             filled_mask[:landscape_height, :landscape_width] = 1
         elif cam_name == "ring_front_center":
-            tiled_img[:landscape_height, landscape_width : landscape_width + landscape_height] = img[:landscape_height, :]
+            tiled_img[:landscape_height, landscape_width : landscape_width + landscape_height] = img[
+                :landscape_height, :
+            ]
             filled_mask[:landscape_height, landscape_width : landscape_width + landscape_height] = 1
         elif cam_name == "ring_front_right":
             tiled_img[:landscape_height, landscape_width + landscape_height :] = img
@@ -313,35 +311,41 @@ def layout_argoverse(
         elif cam_name == "ring_side_right":
             tiled_img[
                 landscape_height : 2 * landscape_height,
-                landscape_width + landscape_height :
+                landscape_width + landscape_height :,
             ] = img
             filled_mask[
                 landscape_height : 2 * landscape_height,
-                landscape_width + landscape_height :
+                landscape_width + landscape_height :,
             ] = 1
         elif cam_name == "ring_rear_left":
             tiled_img[
-                2 * landscape_height : 3 * landscape_height, int(0.5 * landscape_height):int(landscape_width + 0.5 * landscape_height)
+                2 * landscape_height : 3 * landscape_height,
+                int(0.5 * landscape_height) : int(landscape_width + 0.5 * landscape_height),
             ] = img
             filled_mask[
-                2 * landscape_height : 3 * landscape_height, int(0.5 * landscape_height):int(landscape_width + 0.5 * landscape_height)
+                2 * landscape_height : 3 * landscape_height,
+                int(0.5 * landscape_height) : int(landscape_width + 0.5 * landscape_height),
             ] = 1
         elif cam_name == "ring_rear_right":
             tiled_img[
-                2 * landscape_height : 3 * landscape_height, int(landscape_width + 0.5 * landscape_height):int(2 * landscape_width + 0.5 * landscape_height)
+                2 * landscape_height : 3 * landscape_height,
+                int(landscape_width + 0.5 * landscape_height) : int(2 * landscape_width + 0.5 * landscape_height),
             ] = img
             filled_mask[
-                2 * landscape_height : 3 * landscape_height, int(landscape_width + 0.5 * landscape_height):int(2 * landscape_width + 0.5 * landscape_height)
+                2 * landscape_height : 3 * landscape_height,
+                int(landscape_width + 0.5 * landscape_height) : int(2 * landscape_width + 0.5 * landscape_height),
             ] = 1
-    
+
     # crop the image according to the lagrest filled area
     min_y, max_y = np.where(filled_mask)[0].min(), np.where(filled_mask)[0].max()
     min_x, max_x = np.where(filled_mask)[1].min(), np.where(filled_mask)[1].max()
     tiled_img = tiled_img[min_y:max_y, min_x:max_x]
     return tiled_img
 
+
 def dump_3d_bbox_on_image(
-    coords, img,
+    coords,
+    img,
     color: Optional[Tuple[int, int, int]] = None,
     thickness: float = 4,
 ) -> None:
@@ -372,15 +376,17 @@ def dump_3d_bbox_on_image(
 
     return canvas
 
+
 def color_mapper(id: str) -> tuple:
     # use SHA256 to hash the id
     hash_object = hashlib.sha256(id.encode())
     hash_hex = hash_object.hexdigest()
-    
+
     r = int(hash_hex[0:2], 16)
     g = int(hash_hex[2:4], 16)
     b = int(hash_hex[4:6], 16)
     return (r, g, b)
+
 
 def sinebow(h):
     """A cyclic and uniform colormap, see http://basecase.org/env/on-rainbows."""
@@ -442,9 +448,7 @@ def visualize_cmap(
     """
     # Identify the values that bound the middle of `value' according to `weight`.
     if lo is None or hi is None:
-        lo_auto, hi_auto = weighted_percentile(
-            value, weight, [50 - percentile / 2, 50 + percentile / 2]
-        )
+        lo_auto, hi_auto = weighted_percentile(value, weight, [50 - percentile / 2, 50 + percentile / 2])
         # If `lo` or `hi` are None, use the automatically-computed bounds above.
         eps = np.finfo(np.float32).eps
         lo = lo or (lo_auto - eps)
@@ -458,9 +462,7 @@ def visualize_cmap(
         value = np.mod(value, modulus) / modulus
     else:
         # Otherwise, just scale to [0, 1].
-        value = np.nan_to_num(
-            np.clip((value - np.minimum(lo, hi)) / np.abs(hi - lo), 0, 1)
-        )
+        value = np.nan_to_num(np.clip((value - np.minimum(lo, hi)) / np.abs(hi - lo), 0, 1))
     if weight is not None:
         value *= weight
     else:
@@ -474,9 +476,7 @@ def visualize_cmap(
     return matte(colorized, weight) if matte_background else colorized
 
 
-def visualize_depth(
-    x, acc=None, lo=None, hi=None, depth_curve_fn=lambda x: -np.log(x + 1e-6)
-):
+def visualize_depth(x, acc=None, lo=None, hi=None, depth_curve_fn=lambda x: -np.log(x + 1e-6)):
     """Visualizes depth maps."""
     return visualize_cmap(
         x,
@@ -487,7 +487,8 @@ def visualize_depth(
         hi=hi,
         matte_background=False,
     )
-    
+
+
 depth_visualizer = lambda frame, opacity: visualize_depth(
     frame,
     opacity,

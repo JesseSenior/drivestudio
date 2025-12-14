@@ -1,29 +1,32 @@
-from typing import Literal, Dict, List, Optional, Callable
-from tqdm import tqdm, trange
-import numpy as np
-import os
 import logging
-import imageio
+import os
+from typing import Callable, Dict, List, Optional
 
+import imageio
+import numpy as np
 import torch
+from skimage.metrics import structural_similarity as ssim
 from torch import Tensor
 from torch.nn import functional as F
-from skimage.metrics import structural_similarity as ssim
+from tqdm import tqdm, trange
 
 from datasets.base import SplitWrapper
 from models.trainers.base import BasicTrainer
 from utils.visualization import (
-    to8b,
     depth_visualizer,
+    to8b,
 )
 
 logger = logging.getLogger()
 
+
 def get_numpy(x: Tensor) -> np.ndarray:
     return x.squeeze().cpu().numpy()
 
+
 def non_zero_mean(x: Tensor) -> float:
     return sum(x) / len(x) if len(x) > 0 else -1
+
 
 def compute_psnr(prediction: Tensor, target: Tensor) -> float:
     """
@@ -48,7 +51,7 @@ def render_images(
     dataset: SplitWrapper,
     compute_metrics: bool = False,
     compute_error_map: bool = False,
-    vis_indices: Optional[List[int]] = None
+    vis_indices: Optional[List[int]] = None,
 ):
     """
     Render pixel-related outputs from a model.
@@ -64,7 +67,7 @@ def render_images(
         trainer=trainer,
         compute_metrics=compute_metrics,
         compute_error_map=compute_error_map,
-        vis_indices=vis_indices
+        vis_indices=vis_indices,
     )
     if compute_metrics:
         num_samples = len(dataset) if vis_indices is None else len(vis_indices)
@@ -103,17 +106,35 @@ def render(
     """
     # rgbs
     rgbs, gt_rgbs, rgb_sky_blend, rgb_sky = [], [], [], []
-    Background_rgbs, RigidNodes_rgbs, DeformableNodes_rgbs, SMPLNodes_rgbs, Dynamic_rgbs = [], [], [], [], []
+    (
+        Background_rgbs,
+        RigidNodes_rgbs,
+        DeformableNodes_rgbs,
+        SMPLNodes_rgbs,
+        Dynamic_rgbs,
+    ) = [], [], [], [], []
     error_maps = []
 
     # depths
     depths, lidar_on_images = [], []
-    Background_depths, RigidNodes_depths, DeformableNodes_depths, SMPLNodes_depths, Dynamic_depths = [], [], [], [], []
+    (
+        Background_depths,
+        RigidNodes_depths,
+        DeformableNodes_depths,
+        SMPLNodes_depths,
+        Dynamic_depths,
+    ) = [], [], [], [], []
 
     # sky
     opacities, sky_masks = [], []
-    Background_opacities, RigidNodes_opacities, DeformableNodes_opacities, SMPLNodes_opacities, Dynamic_opacities = [], [], [], [], []
-    
+    (
+        Background_opacities,
+        RigidNodes_opacities,
+        DeformableNodes_opacities,
+        SMPLNodes_opacities,
+        Dynamic_opacities,
+    ) = [], [], [], [], []
+
     # misc
     cam_names, cam_ids = [], []
 
@@ -138,35 +159,33 @@ def render(
                     cam_infos[k] = v.cuda(non_blocking=True)
             # render the image
             results = trainer(image_infos, cam_infos)
-            
+
             # ------------- clip rgb ------------- #
             for k, v in results.items():
                 if isinstance(v, Tensor) and "rgb" in k:
-                    results[k] = v.clamp(0., 1.)
-            
+                    results[k] = v.clamp(0.0, 1.0)
+
             # ------------- cam names ------------- #
             cam_names.append(cam_infos["cam_name"])
-            cam_ids.append(
-                cam_infos["cam_id"].flatten()[0].cpu().numpy()
-            )
+            cam_ids.append(cam_infos["cam_id"].flatten()[0].cpu().numpy())
 
             # ------------- rgb ------------- #
             rgb = results["rgb"]
             rgbs.append(get_numpy(rgb))
             if "pixels" in image_infos:
                 gt_rgbs.append(get_numpy(image_infos["pixels"]))
-                
+
             green_background = torch.tensor([0.0, 177, 64]) / 255.0
             green_background = green_background.to(rgb.device)
             if "Background_rgb" in results:
-                Background_rgb = results["Background_rgb"] * results[
-                    "Background_opacity"
-                ] + green_background * (1 - results["Background_opacity"])
+                Background_rgb = results["Background_rgb"] * results["Background_opacity"] + green_background * (
+                    1 - results["Background_opacity"]
+                )
                 Background_rgbs.append(get_numpy(Background_rgb))
             if "RigidNodes_rgb" in results:
-                RigidNodes_rgb = results["RigidNodes_rgb"] * results[
-                    "RigidNodes_opacity"
-                ] + green_background * (1 - results["RigidNodes_opacity"])
+                RigidNodes_rgb = results["RigidNodes_rgb"] * results["RigidNodes_opacity"] + green_background * (
+                    1 - results["RigidNodes_opacity"]
+                )
                 RigidNodes_rgbs.append(get_numpy(RigidNodes_rgb))
             if "DeformableNodes_rgb" in results:
                 DeformableNodes_rgb = results["DeformableNodes_rgb"] * results[
@@ -174,14 +193,14 @@ def render(
                 ] + green_background * (1 - results["DeformableNodes_opacity"])
                 DeformableNodes_rgbs.append(get_numpy(DeformableNodes_rgb))
             if "SMPLNodes_rgb" in results:
-                SMPLNodes_rgb = results["SMPLNodes_rgb"] * results[
-                    "SMPLNodes_opacity"
-                ] + green_background * (1 - results["SMPLNodes_opacity"])
+                SMPLNodes_rgb = results["SMPLNodes_rgb"] * results["SMPLNodes_opacity"] + green_background * (
+                    1 - results["SMPLNodes_opacity"]
+                )
                 SMPLNodes_rgbs.append(get_numpy(SMPLNodes_rgb))
             if "Dynamic_rgb" in results:
-                Dynamic_rgb = results["Dynamic_rgb"] * results[
-                    "Dynamic_opacity"
-                ] + green_background * (1 - results["Dynamic_opacity"])
+                Dynamic_rgb = results["Dynamic_rgb"] * results["Dynamic_opacity"] + green_background * (
+                    1 - results["Dynamic_opacity"]
+                )
                 Dynamic_rgbs.append(get_numpy(Dynamic_rgb))
             if compute_error_map:
                 # cal mean squared error
@@ -218,7 +237,7 @@ def render(
                 Dynamic_opacities.append(get_numpy(results["Dynamic_opacity"]))
             if "sky_masks" in image_infos:
                 sky_masks.append(get_numpy(image_infos["sky_masks"]))
-                
+
             # ------------- lidar ------------- #
             if "lidar_depth_map" in image_infos:
                 depth_map = image_infos["lidar_depth_map"]
@@ -238,21 +257,17 @@ def render(
                 )
                 lpips = trainer.lpips(
                     rgb[None, ...].permute(0, 3, 1, 2),
-                    image_infos["pixels"][None, ...].permute(0, 3, 1, 2)
+                    image_infos["pixels"][None, ...].permute(0, 3, 1, 2),
                 )
                 logger.info(f"Frame {i}: PSNR {psnr:.4f}, SSIM {ssim_score:.4f}")
                 psnrs.append(psnr)
                 ssim_scores.append(ssim_score)
                 lpipss.append(lpips.item())
-                
+
                 if "sky_masks" in image_infos:
                     occupied_mask = ~get_numpy(image_infos["sky_masks"]).astype(bool)
                     if occupied_mask.sum() > 0:
-                        occupied_psnrs.append(
-                            compute_psnr(
-                                rgb[occupied_mask], image_infos["pixels"][occupied_mask]
-                            )
-                        )
+                        occupied_psnrs.append(compute_psnr(rgb[occupied_mask], image_infos["pixels"][occupied_mask]))
                         occupied_ssims.append(
                             ssim(
                                 get_numpy(rgb),
@@ -266,11 +281,7 @@ def render(
                 if "dynamic_masks" in image_infos:
                     dynamic_mask = get_numpy(image_infos["dynamic_masks"]).astype(bool)
                     if dynamic_mask.sum() > 0:
-                        masked_psnrs.append(
-                            compute_psnr(
-                                rgb[dynamic_mask], image_infos["pixels"][dynamic_mask]
-                            )
-                        )
+                        masked_psnrs.append(compute_psnr(rgb[dynamic_mask], image_infos["pixels"][dynamic_mask]))
                         masked_ssims.append(
                             ssim(
                                 get_numpy(rgb),
@@ -280,15 +291,11 @@ def render(
                                 full=True,
                             )[1][dynamic_mask].mean()
                         )
-                
+
                 if "human_masks" in image_infos:
                     human_mask = get_numpy(image_infos["human_masks"]).astype(bool)
                     if human_mask.sum() > 0:
-                        human_psnrs.append(
-                            compute_psnr(
-                                rgb[human_mask], image_infos["pixels"][human_mask]
-                            )
-                        )
+                        human_psnrs.append(compute_psnr(rgb[human_mask], image_infos["pixels"][human_mask]))
                         human_ssims.append(
                             ssim(
                                 get_numpy(rgb),
@@ -298,15 +305,11 @@ def render(
                                 full=True,
                             )[1][human_mask].mean()
                         )
-                
+
                 if "vehicle_masks" in image_infos:
                     vehicle_mask = get_numpy(image_infos["vehicle_masks"]).astype(bool)
                     if vehicle_mask.sum() > 0:
-                        vehicle_psnrs.append(
-                            compute_psnr(
-                                rgb[vehicle_mask], image_infos["pixels"][vehicle_mask]
-                            )
-                        )
+                        vehicle_psnrs.append(compute_psnr(rgb[vehicle_mask], image_infos["pixels"][vehicle_mask]))
                         vehicle_ssims.append(
                             ssim(
                                 get_numpy(rgb),
@@ -392,7 +395,7 @@ def save_videos(
     save_images: bool = False,
     fps: int = 10,
     verbose: bool = True,
-):  
+):
     if save_seperate_video:
         return_frame = save_seperate_videos(
             render_results,
@@ -423,17 +426,17 @@ def save_videos(
 def render_novel_views(trainer, render_data: list, save_path: str, fps: int = 30) -> None:
     """
     Perform rendering and save the result as a video.
-    
+
     Args:
         trainer: Trainer object containing the rendering method
         render_data (list): List of dicts, each containing elements required for rendering a single frame
         save_path (str): Path to save the output video
         fps (int): Frames per second for the output video
     """
-    trainer.set_eval()  
-    
-    writer = imageio.get_writer(save_path, mode='I', fps=fps)
-    
+    trainer.set_eval()
+
+    writer = imageio.get_writer(save_path, mode="I", fps=fps)
+
     with torch.no_grad():
         for frame_data in render_data:
             # Move data to GPU
@@ -441,23 +444,21 @@ def render_novel_views(trainer, render_data: list, save_path: str, fps: int = 30
                 frame_data["cam_infos"][key] = value.cuda(non_blocking=True)
             for key, value in frame_data["image_infos"].items():
                 frame_data["image_infos"][key] = value.cuda(non_blocking=True)
-            
+
             # Perform rendering
             outputs = trainer(
                 image_infos=frame_data["image_infos"],
                 camera_infos=frame_data["cam_infos"],
-                novel_view=True
+                novel_view=True,
             )
-            
+
             # Extract RGB image and mask
-            rgb = outputs["rgb"].cpu().numpy().clip(
-                min=1.e-6, max=1-1.e-6
-            )
-            
+            rgb = outputs["rgb"].cpu().numpy().clip(min=1.0e-6, max=1 - 1.0e-6)
+
             # Convert to uint8 and write to video
             rgb_uint8 = (rgb * 255).astype(np.uint8)
             writer.append_data(rgb_uint8)
-    
+
     writer.close()
     print(f"Video saved to {save_path}")
 
@@ -497,25 +498,18 @@ def save_concatenated_videos(
             if key == "gt_sky_masks":
                 frames = [np.stack([frame, frame, frame], axis=-1) for frame in frames]
             elif "mask" in key:
-                frames = [
-                    np.stack([frame, frame, frame], axis=-1) for frame in frames
-                ]
+                frames = [np.stack([frame, frame, frame], axis=-1) for frame in frames]
             elif "depth" in key:
                 try:
-                    opacities = render_results[key.replace("depths", "opacities")][
-                        i * num_cams : (i + 1) * num_cams
-                    ]
+                    opacities = render_results[key.replace("depths", "opacities")][i * num_cams : (i + 1) * num_cams]
                 except:
                     if "median" in key:
-                        opacities = render_results[
-                            key.replace("median_depths", "opacities")
-                        ][i * num_cams : (i + 1) * num_cams]
+                        opacities = render_results[key.replace("median_depths", "opacities")][
+                            i * num_cams : (i + 1) * num_cams
+                        ]
                     else:
                         continue
-                frames = [
-                    depth_visualizer(frame, opacity)
-                    for frame, opacity in zip(frames, opacities)
-                ]
+                frames = [depth_visualizer(frame, opacity) for frame, opacity in zip(frames, opacities)]
             tiled_img = layout(frames, cam_names)
             # frames = np.concatenate(frames, axis=1)
             merged_list.append(tiled_img)
@@ -569,25 +563,18 @@ def save_seperate_videos(
             if key == "gt_sky_masks":
                 frames = [np.stack([frame, frame, frame], axis=-1) for frame in frames]
             elif "mask" in key:
-                frames = [
-                    np.stack([frame, frame, frame], axis=-1) for frame in frames
-                ]
+                frames = [np.stack([frame, frame, frame], axis=-1) for frame in frames]
             elif "depth" in key:
                 try:
-                    opacities = render_results[key.replace("depths", "opacities")][
-                        i * num_cams : (i + 1) * num_cams
-                    ]
+                    opacities = render_results[key.replace("depths", "opacities")][i * num_cams : (i + 1) * num_cams]
                 except:
                     if "median" in key:
-                        opacities = render_results[
-                            key.replace("median_depths", "opacities")
-                        ][i * num_cams : (i + 1) * num_cams]
+                        opacities = render_results[key.replace("median_depths", "opacities")][
+                            i * num_cams : (i + 1) * num_cams
+                        ]
                     else:
                         continue
-                frames = [
-                    depth_visualizer(frame, opacity)
-                    for frame, opacity in zip(frames, opacities)
-                ]
+                frames = [depth_visualizer(frame, opacity) for frame, opacity in zip(frames, opacities)]
             tiled_img = layout(frames, cam_names)
             if save_images:
                 if i == 0:

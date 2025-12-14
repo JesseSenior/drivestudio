@@ -5,14 +5,14 @@ try:
     from waymo_open_dataset import dataset_pb2
 except ImportError:
     raise ImportError(
-        'Please run "pip install waymo-open-dataset-tf-2-6-0" '
-        ">1.4.5 to install the official devkit first."
+        'Please run "pip install waymo-open-dataset-tf-2-6-0" >1.4.5 to install the official devkit first.'
     )
 
 import numpy as np
 import tensorflow as tf
 from waymo_open_dataset.utils import range_image_utils, transform_utils
 from waymo_open_dataset.wdl_limited.camera.ops import py_camera_model_ops
+
 
 def project_vehicle_to_image(vehicle_pose, calibration, points):
     """Projects from vehicle coordinate system to image with global shutter.
@@ -36,9 +36,7 @@ def project_vehicle_to_image(vehicle_pose, calibration, points):
 
     # Populate camera image metadata. Velocity and latency stats are filled with
     # zeroes.
-    extrinsic = tf.reshape(
-        tf.constant(list(calibration.extrinsic.transform), dtype=tf.float32), [4, 4]
-    )
+    extrinsic = tf.reshape(tf.constant(list(calibration.extrinsic.transform), dtype=tf.float32), [4, 4])
     intrinsic = tf.constant(list(calibration.intrinsic), dtype=tf.float32)
     metadata = tf.constant(
         [
@@ -116,12 +114,8 @@ def compute_range_image_cartesian(
 
         # To vehicle frame.
         # [B, H, W, 3]
-        range_image_points = (
-            tf.einsum("bkr,bijr->bijk", rotation, range_image_points) + translation
-        )
-        range_image_origins = (
-            tf.einsum("bkr,bijr->bijk", rotation, range_image_origins) + translation
-        )
+        range_image_points = tf.einsum("bkr,bijr->bijk", rotation, range_image_points) + translation
+        range_image_origins = tf.einsum("bkr,bijr->bijk", rotation, range_image_origins) + translation
         if pixel_pose is not None:
             # To global frame.
             # [B, H, W, 3, 3]
@@ -130,12 +124,10 @@ def compute_range_image_cartesian(
             pixel_pose_translation = pixel_pose[..., 0:3, 3]
             # [B, H, W, 3]
             range_image_points = (
-                tf.einsum("bhwij,bhwj->bhwi", pixel_pose_rotation, range_image_points)
-                + pixel_pose_translation
+                tf.einsum("bhwij,bhwj->bhwi", pixel_pose_rotation, range_image_points) + pixel_pose_translation
             )
             range_image_origins = (
-                tf.einsum("bhwij,bhwj->bhwi", pixel_pose_rotation, range_image_origins)
-                + pixel_pose_translation
+                tf.einsum("bhwij,bhwj->bhwi", pixel_pose_rotation, range_image_origins) + pixel_pose_translation
             )
 
             if frame_pose is None:
@@ -147,22 +139,16 @@ def compute_range_image_cartesian(
             world_to_vehicle_translation = world_to_vehicle[:, 0:3, 3]
             # [B, H, W, 3]
             range_image_points = (
-                tf.einsum(
-                    "bij,bhwj->bhwi", world_to_vehicle_rotation, range_image_points
-                )
+                tf.einsum("bij,bhwj->bhwi", world_to_vehicle_rotation, range_image_points)
                 + world_to_vehicle_translation[:, tf.newaxis, tf.newaxis, :]
             )
             range_image_origins = (
-                tf.einsum(
-                    "bij,bhwj->bhwi", world_to_vehicle_rotation, range_image_origins
-                )
+                tf.einsum("bij,bhwj->bhwi", world_to_vehicle_rotation, range_image_origins)
                 + world_to_vehicle_translation[:, tf.newaxis, tf.newaxis, :]
             )
 
         range_image_points = tf.cast(range_image_points, dtype=range_image_polar_dtype)
-        range_image_origins = tf.cast(
-            range_image_origins, dtype=range_image_polar_dtype
-        )
+        range_image_origins = tf.cast(range_image_origins, dtype=range_image_polar_dtype)
         return range_image_points, range_image_origins
 
 
@@ -220,12 +206,8 @@ def parse_range_image_flow_and_camera_projection(frame):
     camera_projections = {}
     range_image_top_pose = None
     for laser in frame.lasers:
-        if (
-            len(laser.ri_return1.range_image_flow_compressed) > 0
-        ):  # pylint: disable=g-explicit-length-test
-            range_image_str_tensor = tf.io.decode_compressed(
-                laser.ri_return1.range_image_flow_compressed, "ZLIB"
-            )
+        if len(laser.ri_return1.range_image_flow_compressed) > 0:  # pylint: disable=g-explicit-length-test
+            range_image_str_tensor = tf.io.decode_compressed(laser.ri_return1.range_image_flow_compressed, "ZLIB")
             ri = dataset_pb2.MatrixFloat()
             ri.ParseFromString(bytearray(range_image_str_tensor.numpy()))
             range_images[laser.name] = [ri]
@@ -235,9 +217,7 @@ def parse_range_image_flow_and_camera_projection(frame):
                     laser.ri_return1.range_image_pose_compressed, "ZLIB"
                 )
                 range_image_top_pose = dataset_pb2.MatrixFloat()
-                range_image_top_pose.ParseFromString(
-                    bytearray(range_image_top_pose_str_tensor.numpy())
-                )
+                range_image_top_pose.ParseFromString(bytearray(range_image_top_pose_str_tensor.numpy()))
 
             camera_projection_str_tensor = tf.io.decode_compressed(
                 laser.ri_return1.camera_projection_compressed, "ZLIB"
@@ -245,12 +225,8 @@ def parse_range_image_flow_and_camera_projection(frame):
             cp = dataset_pb2.MatrixInt32()
             cp.ParseFromString(bytearray(camera_projection_str_tensor.numpy()))
             camera_projections[laser.name] = [cp]
-        if (
-            len(laser.ri_return2.range_image_flow_compressed) > 0
-        ):  # pylint: disable=g-explicit-length-test
-            range_image_str_tensor = tf.io.decode_compressed(
-                laser.ri_return2.range_image_flow_compressed, "ZLIB"
-            )
+        if len(laser.ri_return2.range_image_flow_compressed) > 0:  # pylint: disable=g-explicit-length-test
+            range_image_str_tensor = tf.io.decode_compressed(laser.ri_return2.range_image_flow_compressed, "ZLIB")
             ri = dataset_pb2.MatrixFloat()
             ri.ParseFromString(bytearray(range_image_str_tensor.numpy()))
             range_images[laser.name].append(ri)
@@ -297,9 +273,7 @@ def convert_range_image_to_point_cloud_flow(
     points_flow = []
     laser_ids = []
 
-    frame_pose = tf.convert_to_tensor(
-        np.reshape(np.array(frame.pose.transform), [4, 4])
-    )
+    frame_pose = tf.convert_to_tensor(np.reshape(np.array(frame.pose.transform), [4, 4]))
     # [H, W, 6]
     range_image_top_pose_tensor = tf.reshape(
         tf.convert_to_tensor(range_image_top_pose.data), range_image_top_pose.shape.dims
@@ -328,12 +302,8 @@ def convert_range_image_to_point_cloud_flow(
         beam_inclinations = tf.reverse(beam_inclinations, axis=[-1])
         extrinsic = np.reshape(np.array(c.extrinsic.transform), [4, 4])
 
-        range_image_tensor = tf.reshape(
-            tf.convert_to_tensor(range_image.data), range_image.shape.dims
-        )
-        range_image_flow_tensor = tf.reshape(
-            tf.convert_to_tensor(range_image_flow.data), range_image_flow.shape.dims
-        )
+        range_image_tensor = tf.reshape(tf.convert_to_tensor(range_image.data), range_image.shape.dims)
+        range_image_flow_tensor = tf.reshape(tf.convert_to_tensor(range_image_flow.data), range_image_flow.shape.dims)
         pixel_pose_local = None
         frame_pose_local = None
         if c.name == dataset_pb2.LaserName.TOP:
@@ -351,7 +321,10 @@ def convert_range_image_to_point_cloud_flow(
 
         mask_index = tf.where(range_image_mask)
 
-        (origins_cartesian, points_cartesian,) = extract_point_cloud_from_range_image(
+        (
+            origins_cartesian,
+            points_cartesian,
+        ) = extract_point_cloud_from_range_image(
             tf.expand_dims(range_image_tensor[..., 0], axis=0),
             tf.expand_dims(extrinsic, axis=0),
             tf.expand_dims(tf.convert_to_tensor(beam_inclinations), axis=0),
@@ -370,9 +343,7 @@ def convert_range_image_to_point_cloud_flow(
         points_flow_x_tensor = tf.expand_dims(tf.gather_nd(flow_x, mask_index), axis=1)
         points_flow_y_tensor = tf.expand_dims(tf.gather_nd(flow_y, mask_index), axis=1)
         points_flow_z_tensor = tf.expand_dims(tf.gather_nd(flow_z, mask_index), axis=1)
-        points_flow_class_tensor = tf.expand_dims(
-            tf.gather_nd(flow_class, mask_index), axis=1
-        )
+        points_flow_class_tensor = tf.expand_dims(tf.gather_nd(flow_class, mask_index), axis=1)
 
         origins.append(origins_tensor.numpy())
         points.append(points_tensor.numpy())
@@ -401,7 +372,8 @@ def convert_range_image_to_point_cloud_flow(
         points_elongation,
         laser_ids,
     )
-    
+
+
 def get_ground_np(pts):
     """
     This function performs ground removal on a point cloud.

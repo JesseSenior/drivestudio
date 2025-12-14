@@ -1,14 +1,15 @@
 # Modified from: https://github.com/pjlab-ADG/nr3d_lib/
+import logging
 import os
 import shutil
-import logging
 
 logger = logging.getLogger()
 
+
 def backup_folder(
     backup_dir: str,
-    source_dir: str="./",
-    filetypes_to_copy=[".py", ".h", ".cpp", ".cuh", ".cu", ".sh"]
+    source_dir: str = "./",
+    filetypes_to_copy=[".py", ".h", ".cpp", ".cuh", ".cu", ".sh"],
 ):
     filetypes_to_copy = tuple(filetypes_to_copy)
     os.makedirs(backup_dir, exist_ok=True)
@@ -19,10 +20,11 @@ def backup_folder(
         target_file_path = os.path.join(backup_dir, file)
         shutil.copy(source_file_path, target_file_path)
 
+
 def backup_folder_recursive(
     backup_dir: str,
-    source_dir: str="./",
-    filetypes_to_copy=[".py", ".h", ".cpp", ".cuh", ".cu", ".sh"]
+    source_dir: str = "./",
+    filetypes_to_copy=[".py", ".h", ".cpp", ".cuh", ".cu", ".sh"],
 ):
     filetypes_to_copy = tuple(filetypes_to_copy)
     for root, _, files in os.walk(source_dir):
@@ -36,10 +38,11 @@ def backup_folder_recursive(
             os.makedirs(target_dir_path, exist_ok=True)
             shutil.copy(source_file_path, target_file_path)
 
+
 def backup_project(
     backup_dir: str,
-    source_dir: str="./",
-    subdirs_to_copy=["app", "code_multi", "code_single", "dataio", "nr3d_lib"], 
+    source_dir: str = "./",
+    subdirs_to_copy=["app", "code_multi", "code_single", "dataio", "nr3d_lib"],
     filetypes_to_copy=[".py", ".h", ".cpp", ".cuh", ".cu", ".sh"],
 ):
     filetypes_to_copy = tuple(filetypes_to_copy)

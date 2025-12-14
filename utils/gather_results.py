@@ -1,5 +1,5 @@
-import os
 import json
+import os
 
 # novel view synthesis results
 root = "logs/omnire_waymo/nvs"

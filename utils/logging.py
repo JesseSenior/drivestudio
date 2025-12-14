@@ -1,20 +1,20 @@
 # Modified from: https://github.com/facebookresearch/dinov2/blob/main/dinov2/logging/helpers.py
+import datetime
+import functools
+import json
+import logging
 import os
 import sys
 import time
-import json
-import logging
-import datetime
-import functools
-
-from typing import Optional
 from collections import defaultdict, deque
+from typing import Optional
 
 import torch
 
 from utils.misc import get_global_rank, is_enabled, is_main_process
 
 logger = logging.getLogger()
+
 
 class MetricLogger(object):
     def __init__(self, delimiter="\t", output_file=None):
@@ -34,9 +34,7 @@ class MetricLogger(object):
             return self.meters[attr]
         if attr in self.__dict__:
             return self.__dict__[attr]
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{attr}'"
-        )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
     def __str__(self):
         loss_str = []
@@ -64,9 +62,7 @@ class MetricLogger(object):
             f.write(json.dumps(dict_to_dump) + "\n")
         pass
 
-    def log_every(
-        self, iterable, print_freq, header=None, n_iterations=None, start_iteration=0
-    ):
+    def log_every(self, iterable, print_freq, header=None, n_iterations=None, start_iteration=0):
         i = start_iteration
         if not header:
             header = ""
@@ -99,9 +95,7 @@ class MetricLogger(object):
             yield obj
             iter_time.update(time.time() - end)
             if i % print_freq == 0 or i == n_iterations - 1:
-                self.dump_in_output_file(
-                    iteration=i, iter_time=iter_time.avg, data_time=data_time.avg
-                )
+                self.dump_in_output_file(iteration=i, iter_time=iter_time.avg, data_time=data_time.avg)
                 eta_seconds = iter_time.global_avg * (n_iterations - i)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 elapsed_time = time.time() - start_time
@@ -137,9 +131,7 @@ class MetricLogger(object):
                 break
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        logger.info(
-            f"{header} Total time: {total_time_str} ({total_time / n_iterations:.6f} s / it)"
-        )
+        logger.info(f"{header} Total time: {total_time_str} ({total_time / n_iterations:.6f} s / it)")
 
 
 class SmoothedValue:

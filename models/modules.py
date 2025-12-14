@@ -1,16 +1,16 @@
-import torch
-from typing import Optional, Tuple
 import logging
+from typing import Optional, Tuple
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch import Tensor
-from pytorch3d.ops import knn_points
 import nvdiffrast.torch as dr
+import torch
+import torch.nn.functional as F
+from pytorch3d.ops import knn_points
+from torch import Tensor, nn
+
 from utils.geometry import rotation_6d_to_matrix
 
 logger = logging.getLogger()
+
 
 class XYZ_Encoder(nn.Module):
     encoder_type = "XYZ_Encoder"
@@ -23,6 +23,7 @@ class XYZ_Encoder(nn.Module):
     @property
     def n_output_dims(self) -> int:
         raise NotImplementedError
+
 
 class SinusoidalEncoder(XYZ_Encoder):
     encoder_type = "SinusoidalEncoder"
@@ -40,15 +41,11 @@ class SinusoidalEncoder(XYZ_Encoder):
         self.min_deg = min_deg
         self.max_deg = max_deg
         self.enable_identity = enable_identity
-        self.register_buffer(
-            "scales", Tensor([2**i for i in range(min_deg, max_deg + 1)])
-        )
+        self.register_buffer("scales", Tensor([2**i for i in range(min_deg, max_deg + 1)]))
 
     @property
     def n_output_dims(self) -> int:
-        return (
-            int(self.enable_identity) + (self.max_deg - self.min_deg + 1) * 2
-        ) * self.n_input_dims
+        return (int(self.enable_identity) + (self.max_deg - self.min_deg + 1) * 2) * self.n_input_dims
 
     @torch.no_grad()
     def forward(self, x: Tensor) -> Tensor:
@@ -62,13 +59,13 @@ class SinusoidalEncoder(XYZ_Encoder):
             return x
         xb = torch.reshape(
             (x[..., None, :] * self.scales[:, None]),
-            list(x.shape[:-1])
-            + [(self.max_deg - self.min_deg + 1) * self.n_input_dims],
+            list(x.shape[:-1]) + [(self.max_deg - self.min_deg + 1) * self.n_input_dims],
         )
         encoded = torch.sin(torch.cat([xb, xb + 0.5 * torch.pi], dim=-1))
         if self.enable_identity:
             encoded = torch.cat([x] + [encoded], dim=-1)
         return encoded
+
 
 class MLP(nn.Module):
     """A simple MLP with skip connections."""
@@ -110,32 +107,34 @@ class MLP(nn.Module):
             if i < len(self.layers) - 1:
                 x = nn.functional.relu(x)
         return x
-    
+
+
 class SkyModel(nn.Module):
     def __init__(
         self,
         class_name: str,
-        n: int, 
+        n: int,
         head_mlp_layer_width: int = 64,
         enable_appearance_embedding: bool = True,
         appearance_embedding_dim: int = 16,
-        device: torch.device = torch.device("cuda")
+        device: torch.device = torch.device("cuda"),
     ):
         super().__init__()
         self.class_prefix = class_name + "#"
         self.device = device
-        self.direction_encoding = SinusoidalEncoder(
-            n_input_dims=3, min_deg=0, max_deg=6
-        )
+        self.direction_encoding = SinusoidalEncoder(n_input_dims=3, min_deg=0, max_deg=6)
         self.direction_encoding.requires_grad_(False)
-        
+
         self.enable_appearance_embedding = enable_appearance_embedding
         if self.enable_appearance_embedding:
             self.appearance_embedding_dim = appearance_embedding_dim
             self.appearance_embedding = nn.Embedding(n, appearance_embedding_dim, dtype=torch.float32)
-            
-        in_dims = self.direction_encoding.n_output_dims + appearance_embedding_dim \
-            if self.enable_appearance_embedding else self.direction_encoding.n_output_dims
+
+        in_dims = (
+            self.direction_encoding.n_output_dims + appearance_embedding_dim
+            if self.enable_appearance_embedding
+            else self.direction_encoding.n_output_dims
+        )
         self.sky_head = MLP(
             in_dims=in_dims,
             out_dims=3,
@@ -144,17 +143,19 @@ class SkyModel(nn.Module):
             skip_connections=[1],
         )
         self.in_test_set = False
-    
+
     def forward(self, image_infos):
         directions = image_infos["viewdirs"]
         self.device = directions.device
         prefix = directions.shape[:-1]
-        
+
         dd = self.direction_encoding(directions.reshape(-1, 3)).to(self.device)
         if self.enable_appearance_embedding:
             # optionally add appearance embedding
             if "img_idx" in image_infos and not self.in_test_set:
-                appearance_embedding = self.appearance_embedding(image_infos["img_idx"]).reshape(-1, self.appearance_embedding_dim)
+                appearance_embedding = self.appearance_embedding(image_infos["img_idx"]).reshape(
+                    -1, self.appearance_embedding_dim
+                )
             else:
                 # use mean appearance embedding
                 appearance_embedding = torch.ones(
@@ -165,20 +166,20 @@ class SkyModel(nn.Module):
         rgb_sky = self.sky_head(dd).to(self.device)
         rgb_sky = F.sigmoid(rgb_sky)
         return rgb_sky.reshape(prefix + (3,))
-    
+
     def get_param_groups(self):
         return {
-            self.class_prefix+"all": self.parameters(),
+            self.class_prefix + "all": self.parameters(),
         }
-        
-class EnvLight(torch.nn.Module):
 
+
+class EnvLight(torch.nn.Module):
     def __init__(
         self,
         class_name: str,
         resolution=1024,
         device: torch.device = torch.device("cuda"),
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.class_prefix = class_name + "#"
@@ -187,35 +188,36 @@ class EnvLight(torch.nn.Module):
         self.base = torch.nn.Parameter(
             0.5 * torch.ones(6, resolution, resolution, 3, requires_grad=True),
         )
-        
+
     def forward(self, image_infos):
         l = image_infos["viewdirs"]
-        
+
         l = (l.reshape(-1, 3) @ self.to_opengl.T).reshape(*l.shape)
         l = l.contiguous()
         prefix = l.shape[:-1]
         if len(prefix) != 3:  # reshape to [B, H, W, -1]
             l = l.reshape(1, 1, -1, l.shape[-1])
 
-        light = dr.texture(self.base[None, ...], l, filter_mode='linear', boundary_mode='cube')
+        light = dr.texture(self.base[None, ...], l, filter_mode="linear", boundary_mode="cube")
         light = light.view(*prefix, -1)
 
         return light
 
     def get_param_groups(self):
         return {
-            self.class_prefix+"all": self.parameters(),
+            self.class_prefix + "all": self.parameters(),
         }
-        
+
+
 class AffineTransform(nn.Module):
     def __init__(
         self,
         class_name: str,
-        n: int, 
+        n: int,
         embedding_dim: int = 4,
         pixel_affine: bool = False,
         base_mlp_layer_width: int = 64,
-        device: torch.device = torch.device("cuda")
+        device: torch.device = torch.device("cuda"),
     ):
         super().__init__()
         self.class_prefix = class_name + "#"
@@ -223,24 +225,24 @@ class AffineTransform(nn.Module):
         self.embedding_dim = embedding_dim
         self.pixel_affine = pixel_affine
         self.embedding = nn.Embedding(n, embedding_dim, dtype=torch.float32)
-        
-        input_dim = (embedding_dim + 2)if self.pixel_affine else embedding_dim
+
+        input_dim = (embedding_dim + 2) if self.pixel_affine else embedding_dim
         self.decoder = nn.Sequential(
             nn.Linear(input_dim, base_mlp_layer_width),
             nn.ReLU(),
             nn.Linear(base_mlp_layer_width, 12),
         )
         self.in_test_set = False
-        
+
         self.zero_init()
-        
+
     def zero_init(self):
         torch.nn.init.zeros_(self.embedding.weight)
         for layer in self.decoder:
             if isinstance(layer, nn.Linear):
                 torch.nn.init.zeros_(layer.weight)
                 torch.nn.init.zeros_(layer.bias)
-    
+
     def forward(self, image_infos):
         if "img_idx" in image_infos and not self.in_test_set:
             embedding = self.embedding(image_infos["img_idx"])
@@ -254,15 +256,16 @@ class AffineTransform(nn.Module):
             embedding = torch.cat([embedding, image_infos["pixel_coords"]], dim=-1)
         affine = self.decoder(embedding)
         affine = affine.reshape(*embedding.shape[:-1], 3, 4)
-        
+
         affine[..., :3, :3] = affine[..., :3, :3] + torch.eye(3, device=affine.device).reshape(1, 3, 3)
         return affine
 
     def get_param_groups(self):
         return {
-            self.class_prefix+"all": self.parameters(),
+            self.class_prefix + "all": self.parameters(),
         }
-        
+
+
 class CameraOptModule(torch.nn.Module):
     """Camera pose optimization module."""
 
@@ -279,8 +282,8 @@ class CameraOptModule(torch.nn.Module):
         self.embeds = torch.nn.Embedding(n, 9)
         # Identity rotation in 6D representation
         self.register_buffer("identity", torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]))
-        
-        self.zero_init() # important for initialization !!
+
+        self.zero_init()  # important for initialization !!
 
     def zero_init(self):
         torch.nn.init.zeros_(self.embeds.weight)
@@ -302,9 +305,7 @@ class CameraOptModule(torch.nn.Module):
         batch_shape = camtoworlds.shape[:-2]
         pose_deltas = self.embeds(embed_ids)  # (..., 9)
         dx, drot = pose_deltas[..., :3], pose_deltas[..., 3:]
-        rot = rotation_6d_to_matrix(
-            drot + self.identity.expand(*batch_shape, -1)
-        )  # (..., 3, 3)
+        rot = rotation_6d_to_matrix(drot + self.identity.expand(*batch_shape, -1))  # (..., 3, 3)
         transform = torch.eye(4, device=pose_deltas.device).repeat((*batch_shape, 1, 1))
         transform[..., :3, :3] = rot
         transform[..., :3, 3] = dx
@@ -312,20 +313,21 @@ class CameraOptModule(torch.nn.Module):
 
     def get_param_groups(self):
         return {
-            self.class_prefix+"all": self.parameters(),
+            self.class_prefix + "all": self.parameters(),
         }
+
 
 def get_embedder(multires, i=1):
     if i == -1:
         return nn.Identity(), 3
 
     embed_kwargs = {
-        'include_input': True,
-        'input_dims': i,
-        'max_freq_log2': multires - 1,
-        'num_freqs': multires,
-        'log_sampling': True,
-        'periodic_fns': [torch.sin, torch.cos],
+        "include_input": True,
+        "input_dims": i,
+        "max_freq_log2": multires - 1,
+        "num_freqs": multires,
+        "log_sampling": True,
+        "periodic_fns": [torch.sin, torch.cos],
     }
 
     embedder_obj = Embedder(**embed_kwargs)
@@ -340,22 +342,22 @@ class Embedder:
 
     def create_embedding_fn(self):
         embed_fns = []
-        d = self.kwargs['input_dims']
+        d = self.kwargs["input_dims"]
         out_dim = 0
-        if self.kwargs['include_input']:
+        if self.kwargs["include_input"]:
             embed_fns.append(lambda x: x)
             out_dim += d
 
-        max_freq = self.kwargs['max_freq_log2']
-        N_freqs = self.kwargs['num_freqs']
+        max_freq = self.kwargs["max_freq_log2"]
+        N_freqs = self.kwargs["num_freqs"]
 
-        if self.kwargs['log_sampling']:
-            freq_bands = 2. ** torch.linspace(0., max_freq, steps=N_freqs)
+        if self.kwargs["log_sampling"]:
+            freq_bands = 2.0 ** torch.linspace(0.0, max_freq, steps=N_freqs)
         else:
-            freq_bands = torch.linspace(2. ** 0., 2. ** max_freq, steps=N_freqs)
+            freq_bands = torch.linspace(2.0**0.0, 2.0**max_freq, steps=N_freqs)
 
         for freq in freq_bands:
-            for p_fn in self.kwargs['periodic_fns']:
+            for p_fn in self.kwargs["periodic_fns"]:
                 embed_fns.append(lambda x, p_fn=p_fn, freq=freq: p_fn(x * freq))
                 out_dim += d
 
@@ -382,9 +384,8 @@ class DeformNetwork(nn.Module):
         self.input_ch = xyz_input_ch + time_input_ch
 
         self.linear = nn.ModuleList(
-            [nn.Linear(self.input_ch, W)] + [
-                nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch, W)
-                for i in range(D - 1)]
+            [nn.Linear(self.input_ch, W)]
+            + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch, W) for i in range(D - 1)]
         )
 
         self.gaussian_warp = nn.Linear(W, 3)
@@ -406,12 +407,20 @@ class DeformNetwork(nn.Module):
         rotation = self.gaussian_rotation(h)
 
         return d_xyz, rotation, scaling
-    
-    
+
+
 class ConditionalDeformNetwork(nn.Module):
-    def __init__(self, D=8, W=256, input_ch=3, embed_dim=10,
-                 x_multires=10, t_multires=10, 
-                 deform_quat=True, deform_scale=True):
+    def __init__(
+        self,
+        D=8,
+        W=256,
+        input_ch=3,
+        embed_dim=10,
+        x_multires=10,
+        t_multires=10,
+        deform_quat=True,
+        deform_scale=True,
+    ):
         super(ConditionalDeformNetwork, self).__init__()
         self.D = D
         self.W = W
@@ -426,9 +435,8 @@ class ConditionalDeformNetwork(nn.Module):
         self.input_ch = xyz_input_ch + time_input_ch + embed_dim
 
         self.linear = nn.ModuleList(
-            [nn.Linear(self.input_ch, W)] + [
-                nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch, W)
-                for i in range(D - 1)]
+            [nn.Linear(self.input_ch, W)]
+            + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch, W) for i in range(D - 1)]
         )
 
         self.gaussian_warp = nn.Linear(W, 3)
@@ -449,12 +457,13 @@ class ConditionalDeformNetwork(nn.Module):
 
         d_xyz = self.gaussian_warp(h)
         scaling, rotation = None, None
-        if self.deform_scale: 
+        if self.deform_scale:
             scaling = self.gaussian_scaling(h)
         if self.deform_quat:
             rotation = self.gaussian_rotation(h)
 
         return d_xyz, rotation, scaling
+
 
 class VoxelDeformer(nn.Module):
     def __init__(
@@ -464,7 +473,7 @@ class VoxelDeformer(nn.Module):
         resolution_dhw=[8, 32, 32],
         short_dim_dhw=0,  # 0 is d, corresponding to z
         long_dim_dhw=1,
-        is_resume=False
+        is_resume=False,
     ) -> None:
         super().__init__()
         # vtx B,N,3, vtx_features: B,N,J
@@ -479,42 +488,20 @@ class VoxelDeformer(nn.Module):
 
         self.register_buffer(
             "ratio",
-            torch.Tensor(
-                [self.resolution_dhw[long_dim_dhw] / self.resolution_dhw[short_dim_dhw]]
-            ).squeeze(),
+            torch.Tensor([self.resolution_dhw[long_dim_dhw] / self.resolution_dhw[short_dim_dhw]]).squeeze(),
         )
         self.ratio_dim = -1 - short_dim_dhw
-        x_range = (
-            (torch.linspace(-1, 1, steps=w, device=device))
-            .view(1, 1, 1, w)
-            .expand(1, d, h, w)
-        )
-        y_range = (
-            (torch.linspace(-1, 1, steps=h, device=device))
-            .view(1, 1, h, 1)
-            .expand(1, d, h, w)
-        )
-        z_range = (
-            (torch.linspace(-1, 1, steps=d, device=device))
-            .view(1, d, 1, 1)
-            .expand(1, d, h, w)
-        )
-        grid = (
-            torch.cat((x_range, y_range, z_range), dim=0)
-            .reshape(1, 3, -1)
-            .permute(0, 2, 1)
-        )
+        x_range = (torch.linspace(-1, 1, steps=w, device=device)).view(1, 1, 1, w).expand(1, d, h, w)
+        y_range = (torch.linspace(-1, 1, steps=h, device=device)).view(1, 1, h, 1).expand(1, d, h, w)
+        z_range = (torch.linspace(-1, 1, steps=d, device=device)).view(1, d, 1, 1).expand(1, d, h, w)
+        grid = torch.cat((x_range, y_range, z_range), dim=0).reshape(1, 3, -1).permute(0, 2, 1)
         grid = grid.expand(B, -1, -1)
 
         gt_bbox_min = (vtx.min(dim=1).values).to(device)
         gt_bbox_max = (vtx.max(dim=1).values).to(device)
         offset = (gt_bbox_min + gt_bbox_max) * 0.5
-        self.register_buffer(
-            "global_scale", torch.Tensor([1.2]).squeeze()
-        )  # from Fast-SNARF
-        scale = (
-            (gt_bbox_max - gt_bbox_min).max(dim=-1).values / 2 * self.global_scale
-        ).unsqueeze(-1)
+        self.register_buffer("global_scale", torch.Tensor([1.2]).squeeze())  # from Fast-SNARF
+        scale = ((gt_bbox_max - gt_bbox_min).max(dim=-1).values / 2 * self.global_scale).unsqueeze(-1)
 
         corner = torch.ones_like(offset) * scale
         corner[:, self.ratio_dim] /= self.ratio
@@ -522,12 +509,10 @@ class VoxelDeformer(nn.Module):
         max_vert = (offset + corner).reshape(-1, 1, 3)
         self.bbox = torch.cat([min_vert, max_vert], dim=1)
 
-        self.register_buffer("scale", scale.unsqueeze(1)) # [B, 1, 1]
-        self.register_buffer("offset", offset.unsqueeze(1)) # [B, 1, 3]
+        self.register_buffer("scale", scale.unsqueeze(1))  # [B, 1, 1]
+        self.register_buffer("offset", offset.unsqueeze(1))  # [B, 1, 3]
 
-        grid_denorm = self.denormalize(
-            grid
-        )  # grid_denorm is in the same scale as the canonical body
+        grid_denorm = self.denormalize(grid)  # grid_denorm is in the same scale as the canonical body
 
         if not is_resume:
             weights = (
@@ -541,9 +526,7 @@ class VoxelDeformer(nn.Module):
             )
         else:
             # random initialization
-            weights = torch.randn(
-                B, vtx_features.shape[-1], *resolution_dhw
-            ).to(device)
+            weights = torch.randn(B, vtx_features.shape[-1], *resolution_dhw).to(device)
 
         self.register_buffer("lbs_voxel_base", weights.detach())
         self.register_buffer("grid_denorm", grid_denorm)
@@ -554,7 +537,6 @@ class VoxelDeformer(nn.Module):
         # import numpy as np
         # np.savetxt("./debug/dbg.xyz", grid_denorm[0].detach().cpu())
         # np.savetxt("./debug/vtx.xyz", vtx[0].detach().cpu())
-        return
 
     def enable_voxel_correction(self):
         voxel_w_correction = torch.zeros_like(self.lbs_voxel_base)
@@ -565,7 +547,7 @@ class VoxelDeformer(nn.Module):
             torch.ones(
                 self.lbs_voxel_base.shape[0],
                 additional_channels,
-                *self.lbs_voxel_base.shape[2:]
+                *self.lbs_voxel_base.shape[2:],
             )
             * std
         )
@@ -640,10 +622,12 @@ class VoxelDeformer(nn.Module):
 
     def _query_weights_smpl(self, x, smpl_verts, smpl_weights):
         # adapted from https://github.com/jby1993/SelfReconCode/blob/main/model/Deformer.py
-        dist, idx, _ = knn_points(x, smpl_verts.detach(), K=30) # [B, N, 30]
+        dist, idx, _ = knn_points(x, smpl_verts.detach(), K=30)  # [B, N, 30]
         dist = dist.sqrt().clamp_(0.0001, 1.0)
-        expanded_smpl_weights = smpl_weights.unsqueeze(2).expand(-1, -1, idx.shape[2], -1) # [B, N, 30, J]
-        weights = expanded_smpl_weights.gather(1, idx.unsqueeze(-1).expand(-1, -1, -1, expanded_smpl_weights.shape[-1])) # [B, N, 30, J]
+        expanded_smpl_weights = smpl_weights.unsqueeze(2).expand(-1, -1, idx.shape[2], -1)  # [B, N, 30, J]
+        weights = expanded_smpl_weights.gather(
+            1, idx.unsqueeze(-1).expand(-1, -1, -1, expanded_smpl_weights.shape[-1])
+        )  # [B, N, 30, J]
 
         ws = 1.0 / dist
         ws = ws / ws.sum(-1, keepdim=True)
@@ -662,9 +646,7 @@ class VoxelDeformer(nn.Module):
                 + weights[:, :, 1:-1, 1:-1, 2:]
                 + weights[:, :, 1:-1, 1:-1, :-2]
             ) / 6.0
-            weights[:, :, 1:-1, 1:-1, 1:-1] = (
-                weights[:, :, 1:-1, 1:-1, 1:-1] - mean
-            ) * 0.7 + mean
+            weights[:, :, 1:-1, 1:-1, 1:-1] = (weights[:, :, 1:-1, 1:-1, 1:-1] - mean) * 0.7 + mean
             sums = weights.sum(1, keepdim=True)
             weights = weights / sums
         return weights.detach()

@@ -14,15 +14,14 @@ def download_file(filename, target_dir, source):
             f"{source}/{filename}.tfrecord",
             target_dir,
         ],
+        check=False,
         capture_output=True,  # To capture stderr and stdout for detailed error information
         text=True,
     )
 
     # Check the return code of the gsutil command
     if result.returncode != 0:
-        raise Exception(
-            result.stderr
-        )  # Raise an exception with the error message from the gsutil command
+        raise Exception(result.stderr)  # Raise an exception with the error message from the gsutil command
 
 
 def download_files(
@@ -43,10 +42,7 @@ def download_files(
 
     # Use ThreadPoolExecutor to manage concurrent downloads
     with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [
-            executor.submit(download_file, filename, target_dir, source)
-            for filename in file_names
-        ]
+        futures = [executor.submit(download_file, filename, target_dir, source) for filename in file_names]
 
         for counter, future in enumerate(futures, start=1):
             # Wait for the download to complete and handle any exceptions
@@ -68,12 +64,8 @@ if __name__ == "__main__":
         default="data/waymo/raw",
         help="Path to the target directory",
     )
-    parser.add_argument(
-        "--scene_ids", type=int, nargs="+", help="scene ids to download"
-    )
-    parser.add_argument(
-        "--split_file", type=str, default=None, help="split file in data/waymo_splits"
-    )
+    parser.add_argument("--scene_ids", type=int, nargs="+", help="scene ids to download")
+    parser.add_argument("--split_file", type=str, default=None, help="split file in data/waymo_splits")
     args = parser.parse_args()
     os.makedirs(args.target_dir, exist_ok=True)
     total_list = open("data/waymo_train_list.txt", "r").readlines()

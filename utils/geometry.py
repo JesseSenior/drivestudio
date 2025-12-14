@@ -1,8 +1,9 @@
 # Utility functions for geometric transformations and projections.
 import numpy as np
 import torch
-from torch import Tensor
 import torch.nn.functional as F
+from torch import Tensor
+
 
 def transform_points(points, transform_matrix):
     """
@@ -20,6 +21,7 @@ def transform_points(points, transform_matrix):
     transformed_points = torch.matmul(homo_points, transform_matrix.T)
     return transformed_points[:, :3]
 
+
 def get_corners(l: float, w: float, h: float):
     """
     Get 8 corners of a 3D bounding box centered at origin.
@@ -30,12 +32,15 @@ def get_corners(l: float, w: float, h: float):
     Returns:
         (3, 8) array of corner coordinates
     """
-    return np.array([
-        [-l/2, -l/2, l/2, l/2, -l/2, -l/2, l/2, l/2],
-        [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2],
-        [h/2, h/2, h/2, h/2, -h/2, -h/2, -h/2, -h/2],
-    ])
-    
+    return np.array(
+        [
+            [-l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2],
+            [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2],
+            [h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2],
+        ]
+    )
+
+
 def project_camera_points_to_image(points_cam, cam_intrinsics):
     """
     Project 3D points from camera space to 2D image space.
@@ -52,17 +57,20 @@ def project_camera_points_to_image(points_cam, cam_intrinsics):
     points_img = cam_intrinsics @ points_cam.T
     depths = points_img[2, :]
     projected_points = (points_img[:2, :] / (depths + 1e-6)).T
-    
+
     return projected_points, depths
 
+
 def cube_root(x):
-    return torch.sign(x) * torch.abs(x) ** (1. / 3)
+    return torch.sign(x) * torch.abs(x) ** (1.0 / 3)
+
 
 def spherical_to_cartesian(r, theta, phi):
     x = r * torch.sin(theta) * torch.cos(phi)
     y = r * torch.sin(theta) * torch.sin(phi)
     z = r * torch.cos(theta)
     return torch.stack([x, y, z], dim=1)
+
 
 def uniform_sample_sphere(num_samples, device, inverse=False):
     """
@@ -79,6 +87,7 @@ def uniform_sample_sphere(num_samples, device, inverse=False):
     phis = 2 * torch.pi * torch.rand((num_samples,)).to(device)
     pts = spherical_to_cartesian(dist, thetas, phis)
     return pts
+
 
 def rotation_6d_to_matrix(d6: Tensor) -> Tensor:
     """

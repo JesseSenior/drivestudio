@@ -15,10 +15,10 @@ Usage:
     Direct run this script in the newly set mamba env.
 """
 
-from transformers import AutoImageProcessor, AutoModelForSemanticSegmentation
-import torch
 import numpy as np
+import torch
 from PIL import Image
+from transformers import AutoImageProcessor, AutoModelForSemanticSegmentation
 
 # fmt: off
 semantic_classes = [
@@ -35,11 +35,12 @@ dataset_classes_in_sematic = {
 
 if __name__ == "__main__":
     import os
+    from argparse import ArgumentParser
+    from glob import glob
+
     import imageio
     import numpy as np
-    from glob import glob
     from tqdm import tqdm
-    from argparse import ArgumentParser
 
     parser = ArgumentParser()
     # Custom configs
@@ -89,7 +90,7 @@ if __name__ == "__main__":
 
     # Load model and feature extractor
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    image_processor = AutoImageProcessor.from_pretrained(args.model_name)
+    image_processor = AutoImageProcessor.from_pretrained(args.model_name, use_fast=False)
     model = AutoModelForSemanticSegmentation.from_pretrained(args.model_name)
     model.to(device)
     model.eval()
@@ -163,7 +164,10 @@ if __name__ == "__main__":
 
             # save sky mask
             sky_mask = np.isin(mask, [10])
-            imageio.imwrite(os.path.join(sky_mask_dir, f"{fbase}.png"), sky_mask.astype(np.uint8) * 255)
+            imageio.imwrite(
+                os.path.join(sky_mask_dir, f"{fbase}.png"),
+                sky_mask.astype(np.uint8) * 255,
+            )
 
             if args.process_dynamic_mask:
                 # save human masks
@@ -171,7 +175,10 @@ if __name__ == "__main__":
                 rough_human_mask = imageio.imread(rough_human_mask_path) > 0
                 huamn_mask = np.isin(mask, dataset_classes_in_sematic["human"])
                 valid_human_mask = np.logical_and(huamn_mask, rough_human_mask)
-                imageio.imwrite(os.path.join(human_mask_dir, f"{fbase}.png"), valid_human_mask.astype(np.uint8) * 255)
+                imageio.imwrite(
+                    os.path.join(human_mask_dir, f"{fbase}.png"),
+                    valid_human_mask.astype(np.uint8) * 255,
+                )
 
                 # save vehicle mask
                 rough_vehicle_mask_path = os.path.join(rough_vehicle_mask_dir, f"{fbase}.png")
@@ -179,9 +186,13 @@ if __name__ == "__main__":
                 vehicle_mask = np.isin(mask, dataset_classes_in_sematic["Vehicle"])
                 valid_vehicle_mask = np.logical_and(vehicle_mask, rough_vehicle_mask)
                 imageio.imwrite(
-                    os.path.join(vehicle_mask_dir, f"{fbase}.png"), valid_vehicle_mask.astype(np.uint8) * 255
+                    os.path.join(vehicle_mask_dir, f"{fbase}.png"),
+                    valid_vehicle_mask.astype(np.uint8) * 255,
                 )
 
                 # save dynamic mask
                 valid_all_mask = np.logical_or(valid_human_mask, valid_vehicle_mask)
-                imageio.imwrite(os.path.join(all_mask_dir, f"{fbase}.png"), valid_all_mask.astype(np.uint8) * 255)
+                imageio.imwrite(
+                    os.path.join(all_mask_dir, f"{fbase}.png"),
+                    valid_all_mask.astype(np.uint8) * 255,
+                )

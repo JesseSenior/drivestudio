@@ -14,36 +14,28 @@
 #
 # Contact: ps-license@tuebingen.mpg.de
 
-import os.path as osp
 import argparse
-import pickle
+import os.path as osp
 
 import numpy as np
-import torch
 import open3d as o3d
-
 import smplx
+import torch
 
 
-def main(model_folder, corr_fname, ext='npz',
-         head_color=(0.3, 0.3, 0.6),
-         gender='neutral'):
-
+def main(model_folder, corr_fname, ext="npz", head_color=(0.3, 0.3, 0.6), gender="neutral"):
     head_idxs = np.load(corr_fname)
 
-    model = smplx.create(model_folder, model_type='smplx',
-                         gender=gender,
-                         ext=ext)
+    model = smplx.create(model_folder, model_type="smplx", gender=gender, ext=ext)
     betas = torch.zeros([1, 10], dtype=torch.float32)
     expression = torch.zeros([1, 10], dtype=torch.float32)
 
-    output = model(betas=betas, expression=expression,
-                   return_verts=True)
+    output = model(betas=betas, expression=expression, return_verts=True)
     vertices = output.vertices.detach().cpu().numpy().squeeze()
     joints = output.joints.detach().cpu().numpy().squeeze()
 
-    print('Vertices shape =', vertices.shape)
-    print('Joints shape =', joints.shape)
+    print("Vertices shape =", vertices.shape)
+    print("Joints shape =", joints.shape)
 
     mesh = o3d.geometry.TriangleMesh()
     mesh.vertices = o3d.utility.Vector3dVector(vertices)
@@ -58,24 +50,34 @@ def main(model_folder, corr_fname, ext='npz',
     o3d.visualization.draw_geometries([mesh])
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='SMPL-X Demo')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="SMPL-X Demo")
 
-    parser.add_argument('--model-folder', required=True, type=str,
-                        help='The path to the model folder')
-    parser.add_argument('--corr-fname', required=True, type=str,
-                        dest='corr_fname',
-                        help='Filename with the head correspondences')
-    parser.add_argument('--gender', type=str, default='neutral',
-                        help='The gender of the model')
-    parser.add_argument('--ext', type=str, default='npz',
-                        help='Which extension to use for loading')
-    parser.add_argument('--head', default='right',
-                        choices=['right', 'left'],
-                        type=str, help='Which head to plot')
-    parser.add_argument('--head-color', type=float, nargs=3, dest='head_color',
-                        default=(0.3, 0.3, 0.6),
-                        help='Color for the head vertices')
+    parser.add_argument("--model-folder", required=True, type=str, help="The path to the model folder")
+    parser.add_argument(
+        "--corr-fname",
+        required=True,
+        type=str,
+        dest="corr_fname",
+        help="Filename with the head correspondences",
+    )
+    parser.add_argument("--gender", type=str, default="neutral", help="The gender of the model")
+    parser.add_argument("--ext", type=str, default="npz", help="Which extension to use for loading")
+    parser.add_argument(
+        "--head",
+        default="right",
+        choices=["right", "left"],
+        type=str,
+        help="Which head to plot",
+    )
+    parser.add_argument(
+        "--head-color",
+        type=float,
+        nargs=3,
+        dest="head_color",
+        default=(0.3, 0.3, 0.6),
+        help="Color for the head vertices",
+    )
 
     args = parser.parse_args()
 
@@ -86,7 +88,4 @@ if __name__ == '__main__':
     head = args.head
     head_color = args.head_color
 
-    main(model_folder, corr_fname, ext=ext,
-         head_color=head_color,
-         gender=gender
-         )
+    main(model_folder, corr_fname, ext=ext, head_color=head_color, gender=gender)

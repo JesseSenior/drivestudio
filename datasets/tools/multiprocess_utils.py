@@ -2,11 +2,13 @@
 @brief Parallel processing utilities
 @note Borrowed from: https://github.com/NVlabs/EmerNeRF
 """
+
 import sys
 import time
 from collections.abc import Iterable
 from multiprocessing import Pool
 from shutil import get_terminal_size
+
 
 class ProgressBar:
     """A progress bar which can print the progress."""
@@ -26,9 +28,7 @@ class ProgressBar:
 
     def start(self):
         if self.task_num > 0:
-            self.file.write(
-                f'[{" " * self.bar_width}] 0/{self.task_num}, ' "elapsed: 0s, ETA:"
-            )
+            self.file.write(f"[{' ' * self.bar_width}] 0/{self.task_num}, elapsed: 0s, ETA:")
         else:
             self.file.write("completed: 0, elapsed: 0s")
         self.file.flush()
@@ -61,10 +61,7 @@ class ProgressBar:
             bar_chars = ">" * mark_width + " " * (bar_width - mark_width)
             self.file.write(msg.format(bar_chars))
         else:
-            self.file.write(
-                f"completed: {self.completed}, elapsed: {int(elapsed + 0.5)}s,"
-                f" {fps:.1f} tasks/s"
-            )
+            self.file.write(f"completed: {self.completed}, elapsed: {int(elapsed + 0.5)}s, {fps:.1f} tasks/s")
         self.file.flush()
 
 

@@ -14,7 +14,6 @@
 #
 # Contact: Vassilis Choutas, vassilis.choutas@tuebingen.mpg.de
 
-from typing import Tuple
 from dataclasses import dataclass
 
 
@@ -26,4 +25,4 @@ class Variable:
 
 @dataclass
 class Pose(Variable):
-    type: str = 'aa'
+    type: str = "aa"

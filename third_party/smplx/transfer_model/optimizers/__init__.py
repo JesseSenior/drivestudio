@@ -14,5 +14,5 @@
 #
 # Contact: Vassilis Choutas, vassilis.choutas@tuebingen.mpg.de
 
-from .optim_factory import build_optimizer
 from .minimize import minimize
+from .optim_factory import build_optimizer

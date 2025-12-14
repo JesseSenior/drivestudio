@@ -14,43 +14,41 @@
 #
 # Contact: ps-license@tuebingen.mpg.de
 
-import os.path as osp
 import argparse
+import os.path as osp
 import pickle
 
 import numpy as np
-import torch
 import open3d as o3d
-
 import smplx
+import torch
 
 
-def main(model_folder, corr_fname, ext='npz',
-         hand_color=(0.3, 0.3, 0.6),
-         gender='neutral', hand='right'):
-
-    with open(corr_fname, 'rb') as f:
+def main(
+    model_folder,
+    corr_fname,
+    ext="npz",
+    hand_color=(0.3, 0.3, 0.6),
+    gender="neutral",
+    hand="right",
+):
+    with open(corr_fname, "rb") as f:
         idxs_data = pickle.load(f)
-        if hand == 'both':
-            hand_idxs = np.concatenate(
-                [idxs_data['left_hand'], idxs_data['right_hand']]
-            )
+        if hand == "both":
+            hand_idxs = np.concatenate([idxs_data["left_hand"], idxs_data["right_hand"]])
         else:
-            hand_idxs = idxs_data[f'{hand}_hand']
+            hand_idxs = idxs_data[f"{hand}_hand"]
 
-    model = smplx.create(model_folder, model_type='smplx',
-                         gender=gender,
-                         ext=ext)
+    model = smplx.create(model_folder, model_type="smplx", gender=gender, ext=ext)
     betas = torch.zeros([1, 10], dtype=torch.float32)
     expression = torch.zeros([1, 10], dtype=torch.float32)
 
-    output = model(betas=betas, expression=expression,
-                   return_verts=True)
+    output = model(betas=betas, expression=expression, return_verts=True)
     vertices = output.vertices.detach().cpu().numpy().squeeze()
     joints = output.joints.detach().cpu().numpy().squeeze()
 
-    print('Vertices shape =', vertices.shape)
-    print('Joints shape =', joints.shape)
+    print("Vertices shape =", vertices.shape)
+    print("Joints shape =", joints.shape)
 
     mesh = o3d.geometry.TriangleMesh()
     mesh.vertices = o3d.utility.Vector3dVector(vertices)
@@ -65,24 +63,34 @@ def main(model_folder, corr_fname, ext='npz',
     o3d.visualization.draw_geometries([mesh])
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='SMPL-X Demo')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="SMPL-X Demo")
 
-    parser.add_argument('--model-folder', required=True, type=str,
-                        help='The path to the model folder')
-    parser.add_argument('--corr-fname', required=True, type=str,
-                        dest='corr_fname',
-                        help='Filename with the hand correspondences')
-    parser.add_argument('--gender', type=str, default='neutral',
-                        help='The gender of the model')
-    parser.add_argument('--ext', type=str, default='npz',
-                        help='Which extension to use for loading')
-    parser.add_argument('--hand', default='right',
-                        choices=['right', 'left', 'both'],
-                        type=str, help='Which hand to plot')
-    parser.add_argument('--hand-color', type=float, nargs=3, dest='hand_color',
-                        default=(0.3, 0.3, 0.6),
-                        help='Color for the hand vertices')
+    parser.add_argument("--model-folder", required=True, type=str, help="The path to the model folder")
+    parser.add_argument(
+        "--corr-fname",
+        required=True,
+        type=str,
+        dest="corr_fname",
+        help="Filename with the hand correspondences",
+    )
+    parser.add_argument("--gender", type=str, default="neutral", help="The gender of the model")
+    parser.add_argument("--ext", type=str, default="npz", help="Which extension to use for loading")
+    parser.add_argument(
+        "--hand",
+        default="right",
+        choices=["right", "left", "both"],
+        type=str,
+        help="Which hand to plot",
+    )
+    parser.add_argument(
+        "--hand-color",
+        type=float,
+        nargs=3,
+        dest="hand_color",
+        default=(0.3, 0.3, 0.6),
+        help="Color for the hand vertices",
+    )
 
     args = parser.parse_args()
 
@@ -93,7 +101,11 @@ if __name__ == '__main__':
     hand = args.hand
     hand_color = args.hand_color
 
-    main(model_folder, corr_fname, ext=ext,
-         hand_color=hand_color,
-         gender=gender, hand=hand
-         )
+    main(
+        model_folder,
+        corr_fname,
+        ext=ext,
+        hand_color=hand_color,
+        gender=gender,
+        hand=hand,
+    )

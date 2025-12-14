@@ -1,48 +1,48 @@
 import math
-import numpy as np
-
-import torch
-from numpy.typing import NDArray
-
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
-from dataclasses import dataclass, fields
-from sklearn.neighbors import NearestNeighbors
-from pytorch3d.transforms import matrix_to_quaternion
 
-from gsplat.rendering import rasterization
-from gsplat.cuda_legacy._wrapper import num_sh_bases
-from gsplat.cuda_legacy._torch_impl import quat_to_rotmat
-from gsplat.cuda._wrapper import spherical_harmonics
+import numpy as np
+import torch
+from sklearn.neighbors import NearestNeighbors
+from pytorch3d.transforms import matrix_to_quaternion  # noqa:F401
+
+from gsplat.rendering import rasterization  # noqa:F401
+from gsplat.cuda_legacy._wrapper import num_sh_bases  # noqa:F401
+from gsplat.cuda_legacy._torch_impl import quat_to_rotmat  # noqa:F401
+from gsplat.cuda._wrapper import spherical_harmonics  # noqa:F401
+
 
 def interpolate_quats(q1, q2, fraction=0.5):
     q1 = q1 / torch.norm(q1, dim=-1, keepdim=True)
     q2 = q2 / torch.norm(q2, dim=-1, keepdim=True)
-    
+
     dot = (q1 * q2).sum(dim=-1)
     dot = torch.clamp(dot, -1, 1)
-    
+
     neg_mask = dot < 0
     q2[neg_mask] = -q2[neg_mask]
     dot[neg_mask] = -dot[neg_mask]
-    
+
     similar_mask = dot > 0.9995
     q_interp_similar = q1 + fraction * (q2 - q1)
 
     theta_0 = torch.acos(dot)
     theta = theta_0 * fraction
-    
+
     sin_theta = torch.sin(theta)
     sin_theta_0 = torch.sin(theta_0)
-    
+
     s1 = torch.cos(theta) - dot * sin_theta / sin_theta_0
     s2 = sin_theta / sin_theta_0
-    
+
     q_interp = (s1[..., None] * q1) + (s2[..., None] * q2)
-    
+
     final_q_interp = torch.zeros_like(q1)
     final_q_interp[similar_mask] = q_interp_similar[similar_mask]
     final_q_interp[~similar_mask] = q_interp[~similar_mask]
     return final_q_interp
+
 
 def random_quat_tensor(N):
     """
@@ -61,6 +61,7 @@ def random_quat_tensor(N):
         dim=-1,
     )
 
+
 def quat_mult(q1, q2):
     # NOTE:
     # Q1 is the quaternion that rotates the vector from the original position to the final position
@@ -72,6 +73,7 @@ def quat_mult(q1, q2):
     y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
     z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
     return torch.stack([w, x, y, z]).T
+
 
 def RGB2SH(rgb):
     """
@@ -89,7 +91,7 @@ def SH2RGB(sh):
     return sh * C0 + 0.5
 
 
-def projection_matrix(znear, zfar, fovx, fovy, device:Union[str,torch.device]="cpu"):
+def projection_matrix(znear, zfar, fovx, fovy, device: Union[str, torch.device] = "cpu"):
     """
     Constructs an OpenGL-style perspective projection matrix.
     """
@@ -109,6 +111,7 @@ def projection_matrix(znear, zfar, fovx, fovy, device:Union[str,torch.device]="c
         device=device,
     )
 
+
 @dataclass
 class dataclass_camera:
     camtoworlds: torch.Tensor
@@ -116,6 +119,7 @@ class dataclass_camera:
     Ks: torch.Tensor
     H: int
     W: int
+
 
 @dataclass
 class dataclass_gs:
@@ -126,39 +130,46 @@ class dataclass_gs:
     _quats: torch.Tensor
     detach_keys: List[str]
     extras: Optional[Dict[str, torch.Tensor]] = None
+
     def set_grad_controller(self, detach_keys):
         self.detach_keys = detach_keys
+
     @property
     def opacities(self):
         if "activated_opacities" in self.detach_keys:
             return self._opacities.detach()
         else:
             return self._opacities
+
     @property
     def means(self):
         if "means" in self.detach_keys:
             return self._means.detach()
         else:
             return self._means
+
     @property
     def rgbs(self):
         if "colors" in self.detach_keys:
             return self._rgbs.detach()
         else:
             return self._rgbs
+
     @property
     def scales(self):
         if "scales" in self.detach_keys:
             return self._scales.detach()
         else:
             return self._scales
+
     @property
     def quats(self):
         if "quats" in self.detach_keys:
             return self._quats.detach()
         else:
             return self._quats
-        
+
+
 def remove_from_optim(optimizer, deleted_mask, param_dict):
     """removes the deleted_mask from the optimizer provided"""
     for group_idx, group in enumerate(optimizer.param_groups):
@@ -180,6 +191,7 @@ def remove_from_optim(optimizer, deleted_mask, param_dict):
             optimizer.param_groups[group_idx]["params"] = new_params
             optimizer.state[new_params[0]] = param_state
 
+
 def dup_in_optim(optimizer, dup_mask, param_dict, n=2):
     """adds the parameters to the optimizer"""
     for group_idx, group in enumerate(optimizer.param_groups):
@@ -190,7 +202,10 @@ def dup_in_optim(optimizer, dup_mask, param_dict, n=2):
             param_state = optimizer.state[old_params]
             repeat_dims = (n,) + tuple(1 for _ in range(param_state["exp_avg"].dim() - 1))
             param_state["exp_avg"] = torch.cat(
-                [param_state["exp_avg"], torch.zeros_like(param_state["exp_avg"][dup_mask.squeeze()]).repeat(*repeat_dims)],
+                [
+                    param_state["exp_avg"],
+                    torch.zeros_like(param_state["exp_avg"][dup_mask.squeeze()]).repeat(*repeat_dims),
+                ],
                 dim=0,
             )
             param_state["exp_avg_sq"] = torch.cat(
@@ -204,7 +219,8 @@ def dup_in_optim(optimizer, dup_mask, param_dict, n=2):
             optimizer.state[new_params[0]] = param_state
             optimizer.param_groups[group_idx]["params"] = new_params
             del old_params
-    
+
+
 def k_nearest_sklearn(x: torch.Tensor, k: int):
     """
     Find k-nearest neighbors using sklearn's NearestNeighbors.
@@ -223,17 +239,24 @@ def k_nearest_sklearn(x: torch.Tensor, k: int):
     # Exclude the point itself from the result and return
     return distances[:, 1:].astype(np.float32), indices[:, 1:].astype(np.float32)
 
+
 if __name__ == "__main__":
-    quats_prev_frame = torch.tensor([
-        [ 4.3390e-02,  4.1600e-06, -9.5784e-05,  9.9906e-01],
-        [ 1.1272e-04,  1.0807e-08,  9.5874e-05, -1.0000e+00],
-        [ 1.7490e-04,  1.6769e-08, -9.5874e-05,  1.0000e+00]
-    ], device='cuda:0')
-    
-    quats_next_frame = torch.tensor([
-        [ 4.2516e-02,  4.0762e-06, -9.5787e-05,  9.9910e-01],
-        [ 3.8867e-05,  3.7264e-09, -9.5874e-05,  1.0000e+00],
-        [ 1.8267e-04,  1.7513e-08, -9.5874e-05,  1.0000e+00]
-    ], device='cuda:0')
-    
+    quats_prev_frame = torch.tensor(
+        [
+            [4.3390e-02, 4.1600e-06, -9.5784e-05, 9.9906e-01],
+            [1.1272e-04, 1.0807e-08, 9.5874e-05, -1.0000e00],
+            [1.7490e-04, 1.6769e-08, -9.5874e-05, 1.0000e00],
+        ],
+        device="cuda:0",
+    )
+
+    quats_next_frame = torch.tensor(
+        [
+            [4.2516e-02, 4.0762e-06, -9.5787e-05, 9.9910e-01],
+            [3.8867e-05, 3.7264e-09, -9.5874e-05, 1.0000e00],
+            [1.8267e-04, 1.7513e-08, -9.5874e-05, 1.0000e00],
+        ],
+        device="cuda:0",
+    )
+
     quats_cur_frame = interpolate_quats(quats_prev_frame, quats_next_frame, 0.5)

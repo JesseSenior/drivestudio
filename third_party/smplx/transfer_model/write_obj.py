@@ -1,18 +1,14 @@
-import os.path as osp
 import argparse
+import os.path as osp
+from pathlib import Path
 
 import numpy as np
-import torch
-
 import pyrender
-import trimesh
-
 import smplx
+import torch
+import trimesh
 from smplx.joint_names import Body
-
-from tqdm.auto import tqdm, trange
-
-from pathlib import Path
+from tqdm.auto import trange
 
 
 def main(
@@ -75,9 +71,7 @@ def main(
         poses = motion["smpl_poses"]
         n = poses.shape[0]
         if model_type == "smplh":
-            poses = np.stack(
-                [Body.from_smpl(p.reshape(-1, 3)).as_smplh() for p in poses]
-            )
+            poses = np.stack([Body.from_smpl(p.reshape(-1, 3)).as_smplh() for p in poses])
         poses = torch.tensor(poses.reshape(n, -1)).float()
     global_orient = poses[:, :3]
     if model_type == "smplh":
@@ -112,9 +106,7 @@ def main(
 
         vertex_colors = np.ones([vertices.shape[0], 4]) * [0.3, 0.3, 0.3, 0.8]
         # process=False to avoid creating a new mesh
-        tri_mesh = trimesh.Trimesh(
-            vertices, model.faces, vertex_colors=vertex_colors, process=False
-        )
+        tri_mesh = trimesh.Trimesh(vertices, model.faces, vertex_colors=vertex_colors, process=False)
 
         output_path = output_folder / "{0:04d}.obj".format(pose_idx[0])
         tri_mesh.export(str(output_path))
@@ -140,18 +132,14 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SMPL-X Demo")
 
-    parser.add_argument(
-        "--model-folder", required=True, type=str, help="The path to the model folder"
-    )
+    parser.add_argument("--model-folder", required=True, type=str, help="The path to the model folder")
     parser.add_argument(
         "--motion-file",
         required=True,
         type=str,
         help="The path to the motion file to process",
     )
-    parser.add_argument(
-        "--output-folder", required=True, type=str, help="The path to the output folder"
-    )
+    parser.add_argument("--output-folder", required=True, type=str, help="The path to the output folder")
     parser.add_argument(
         "--model-type",
         default="smplh",
@@ -166,9 +154,7 @@ if __name__ == "__main__":
         dest="num_expression_coeffs",
         help="Number of expression coefficients.",
     )
-    parser.add_argument(
-        "--ext", type=str, default="npz", help="Which extension to use for loading"
-    )
+    parser.add_argument("--ext", type=str, default="npz", help="Which extension to use for loading")
     parser.add_argument(
         "--sample-expression",
         default=True,

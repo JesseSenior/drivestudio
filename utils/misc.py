@@ -10,8 +10,9 @@ import torch.distributed as dist
 
 logger = logging.getLogger()
 
+
 def import_str(string: str):
-    """ Import a python module given string paths
+    """Import a python module given string paths
 
     Args:
         string (str): The given paths
@@ -23,12 +24,13 @@ def import_str(string: str):
     module, cls = string.rsplit(".", 1)
     return getattr(importlib.import_module(module, package=None), cls)
 
+
 def export_points_to_ply(
     positions: torch.tensor,
     colors: torch.tensor,
     save_path: str,
     normalize: bool = False,
-    ):
+):
     # normalize points
     if normalize:
         aabb_min = positions.min(0)[0]
@@ -38,20 +40,21 @@ def export_points_to_ply(
         positions = positions.cpu().numpy()
     if isinstance(colors, torch.Tensor):
         colors = colors.cpu().numpy()
-    
+
     # clamp colors
-    colors = np.clip(colors, a_min=0., a_max=1.)
-    
+    colors = np.clip(colors, a_min=0.0, a_max=1.0)
+
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(positions)
     pcd.colors = o3d.utility.Vector3dVector(colors)
     o3d.io.write_point_cloud(save_path, pcd)
 
-def export_gaussians_to_ply(model, path, name='point_cloud.ply', aabb=None):
+
+def export_gaussians_to_ply(model, path, name="point_cloud.ply", aabb=None):
     model.eval()
     filename = os.path.join(path, name)
     map_to_tensors = {}
-    
+
     with torch.no_grad():
         positions = model.means
         if aabb is not None:
@@ -64,7 +67,7 @@ def export_gaussians_to_ply(model, path, name='point_cloud.ply', aabb=None):
             aabb_center = positions.mean(0)
             aabb_sacle_max = (positions - aabb_center).abs().max() * 1.1
             vis_mask = torch.ones_like(positions[:, 0], dtype=torch.bool)
-            
+
         positions = ((positions[vis_mask] - aabb_center) / aabb_sacle_max).cpu().numpy()
         map_to_tensors["positions"] = o3d.core.Tensor(positions, o3d.core.float32)
         map_to_tensors["normals"] = o3d.core.Tensor(np.zeros_like(positions), o3d.core.float32)
@@ -93,8 +96,9 @@ def export_gaussians_to_ply(model, path, name='point_cloud.ply', aabb=None):
 
     pcd = o3d.t.geometry.PointCloud(map_to_tensors)
     o3d.t.io.write_point_cloud(str(filename), pcd)
-    
+
     logger.info(f"Exported point cloud to {filename}, containing {vis_mask.sum().item()} points.")
+
 
 def is_enabled() -> bool:
     """

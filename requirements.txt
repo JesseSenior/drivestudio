@@ -1,10 +1,11 @@
 # PyTorch and related libraries
---extra-index-url https://download.pytorch.org/whl/cu117
-torch==2.0.0+cu117
-torchvision==0.15.0+cu117
-xformers==0.0.18
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.1.0+cu121
+torchvision==0.16.0+cu121
+xformers
 timm==0.9.5
 pytorch_msssim==1.0.0
+transformers<=4.49
 
 omegaconf==2.3.0
 torchmetrics==0.10.3
@@ -22,7 +23,6 @@ opencv-python
 
 open3d==0.16.0
 pyquaternion==0.9.9
-chumpy
 numpy==1.23.1
 kornia==0.7.2
 
@@ -31,3 +31,7 @@ gdown
 
 nerfview==0.0.3
 lpips==0.1.4
+
+# For development
+ruff
+pre-commit

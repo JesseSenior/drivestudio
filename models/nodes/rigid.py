@@ -1,41 +1,40 @@
-from typing import Dict, List, Tuple
 import logging
 import random
+from typing import Dict, List, Tuple
 
 import torch
 from torch.nn import Parameter
 
-from models.modules import ConditionalDeformNetwork
 from models.gaussians.basics import *
 from models.gaussians.vanilla import VanillaGaussians
 
 logger = logging.getLogger()
 
+
 class RigidNodes(VanillaGaussians):
-    def __init__(
-        self,
-        **kwargs
-    ):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+
     @property
     def num_instances(self):
         return self.instances_fv.shape[1]
+
     @property
     def num_frames(self):
         return self.instances_fv.shape[0]
-    
+
     def get_pts_valid_mask(self):
         """
         get the mask for valid points
         """
         return self.instances_fv[self.cur_frame][self.point_ids[..., 0]]
-    
+
     def set_cur_frame(self, frame_id: int):
         self.cur_frame = frame_id
+
     def register_normalized_timestamps(self, normalized_timestamps: int):
         self.normalized_timestamps = normalized_timestamps
-        
+
     def create_from_pcd(self, instance_pts_dict: Dict[str, torch.Tensor]) -> None:
         """
         instance_pts_dict: {
@@ -64,15 +63,15 @@ class RigidNodes(VanillaGaussians):
             instances_size.append(v["size"])
             instances_fv.append(v["frame_info"].unsqueeze(1))
             point_ids.append(torch.full((v["num_pts"], 1), id_in_model, dtype=torch.long))
-        init_means = torch.cat(init_means, dim=0).to(self.device) # (N, 3)
-        init_colors = torch.cat(init_colors, dim=0).to(self.device) # (N, 3)
-        instances_pose = torch.cat(instances_pose, dim=1).to(self.device) # (num_frame, num_instances, 4, 4)
-        self.instances_size = torch.stack(instances_size).to(self.device) # (num_instances, 3)
-        self.instances_fv = torch.cat(instances_fv, dim=1).to(self.device) # (num_frame, num_instances)
+        init_means = torch.cat(init_means, dim=0).to(self.device)  # (N, 3)
+        init_colors = torch.cat(init_colors, dim=0).to(self.device)  # (N, 3)
+        instances_pose = torch.cat(instances_pose, dim=1).to(self.device)  # (num_frame, num_instances, 4, 4)
+        self.instances_size = torch.stack(instances_size).to(self.device)  # (num_instances, 3)
+        self.instances_fv = torch.cat(instances_fv, dim=1).to(self.device)  # (num_frame, num_instances)
         self.point_ids = torch.cat(point_ids, dim=0).to(self.device)
         instances_quats = self.get_instances_quats(instances_pose)
         instances_trans = instances_pose[..., :3, 3]
-        
+
         # initialize the means, scales, quats, and colors
         self._means = Parameter(init_means)
         distances, _ = k_nearest_sklearn(self._means.data, 3)
@@ -82,12 +81,12 @@ class RigidNodes(VanillaGaussians):
         self._scales = Parameter(torch.log(avg_dist.repeat(1, 3)))
         self._quats = Parameter(random_quat_tensor(self.num_points).to(self.device))
         dim_sh = num_sh_bases(self.sh_degree)
-        
-        # pose refinement
-        self.instances_quats = Parameter(self.quat_act(instances_quats)) # (num_frame, num_instances, 4)
-        self.instances_trans = Parameter(instances_trans)              # (num_frame, num_instances, 3)
 
-        fused_color = RGB2SH(init_colors) # float range [0, 1] 
+        # pose refinement
+        self.instances_quats = Parameter(self.quat_act(instances_quats))  # (num_frame, num_instances, 4)
+        self.instances_trans = Parameter(instances_trans)  # (num_frame, num_instances, 3)
+
+        fused_color = RGB2SH(init_colors)  # float range [0, 1]
         shs = torch.zeros((fused_color.shape[0], dim_sh, 3)).float().to(self.device)
         if self.sh_degree > 0:
             shs[:, 0, :3] = fused_color
@@ -100,23 +99,23 @@ class RigidNodes(VanillaGaussians):
 
     def get_param_groups(self) -> Dict[str, List[Parameter]]:
         param_groups = self.get_gaussian_param_groups()
-        param_groups[self.class_prefix+"ins_rotation"] = [self.instances_quats]
-        param_groups[self.class_prefix+"ins_translation"] = [self.instances_trans]
+        param_groups[self.class_prefix + "ins_rotation"] = [self.instances_quats]
+        param_groups[self.class_prefix + "ins_translation"] = [self.instances_trans]
         return param_groups
-    
+
     def get_instances_quats(self, instances_pose: torch.Tensor) -> torch.Tensor:
         """
         Convert the pose to quaternion for all frames and instances
         """
         num_frames = instances_pose.shape[0]
         num_instances = instances_pose.shape[1]
-        quats = torch.zeros(num_frames*num_instances, 4, device=self.device)
-        
+        quats = torch.zeros(num_frames * num_instances, 4, device=self.device)
+
         poses = instances_pose[..., :3, :3].view(-1, 3, 3)
         valid_mask = self.instances_fv.view(-1)
         _quats = matrix_to_quaternion(poses[valid_mask])
         _quats = self.quat_act(_quats)
-        
+
         quats[valid_mask] = _quats
         quats[~valid_mask, 0] = 1.0
         return quats.reshape(num_frames, num_instances, 4)
@@ -128,21 +127,19 @@ class RigidNodes(VanillaGaussians):
         with torch.no_grad():
             # only split/cull if we've seen every image since opacity reset
             reset_interval = self.ctrl_cfg.reset_alpha_interval
-            do_densification = (
-                self.step < self.ctrl_cfg.stop_split_at
-                and self.step % reset_interval > max(self.num_train_images, self.ctrl_cfg.refine_interval)
+            do_densification = self.step < self.ctrl_cfg.stop_split_at and self.step % reset_interval > max(
+                self.num_train_images, self.ctrl_cfg.refine_interval
             )
             # split & duplicate
             print(f"Class {self.class_prefix} current points: {self.num_points} @ step {self.step}")
             if do_densification:
                 assert self.xys_grad_norm is not None and self.vis_counts is not None and self.max_2Dsize is not None
-                
+
                 avg_grad_norm = self.xys_grad_norm / self.vis_counts
                 high_grads = (avg_grad_norm > self.ctrl_cfg.densify_grad_thresh).squeeze()
-                
+
                 splits = (
-                    self.get_scaling.max(dim=-1).values > \
-                        self.ctrl_cfg.densify_size_thresh * self.scene_scale
+                    self.get_scaling.max(dim=-1).values > self.ctrl_cfg.densify_size_thresh * self.scene_scale
                 ).squeeze()
                 if self.step < self.ctrl_cfg.stop_screen_size_at:
                     splits |= (self.max_2Dsize > self.ctrl_cfg.split_screen_size).squeeze()
@@ -159,8 +156,7 @@ class RigidNodes(VanillaGaussians):
                 ) = self.split_gaussians(splits, nsamps)
 
                 dups = (
-                    self.get_scaling.max(dim=-1).values <= \
-                        self.ctrl_cfg.densify_size_thresh * self.scene_scale
+                    self.get_scaling.max(dim=-1).values <= self.ctrl_cfg.densify_size_thresh * self.scene_scale
                 ).squeeze()
                 dups &= high_grads
                 (
@@ -172,22 +168,45 @@ class RigidNodes(VanillaGaussians):
                     dup_quats,
                     dup_ids,
                 ) = self.dup_gaussians(dups)
-                
+
                 self._means = Parameter(torch.cat([self._means.detach(), split_means, dup_means], dim=0))
                 # self.colors_all = Parameter(torch.cat([self.colors_all.detach(), split_colors, dup_colors], dim=0))
-                self._features_dc = Parameter(torch.cat([self._features_dc.detach(), split_feature_dc, dup_feature_dc], dim=0))
-                self._features_rest = Parameter(torch.cat([self._features_rest.detach(), split_feature_rest, dup_feature_rest], dim=0))
-                self._opacities = Parameter(torch.cat([self._opacities.detach(), split_opacities, dup_opacities], dim=0))
+                self._features_dc = Parameter(
+                    torch.cat(
+                        [self._features_dc.detach(), split_feature_dc, dup_feature_dc],
+                        dim=0,
+                    )
+                )
+                self._features_rest = Parameter(
+                    torch.cat(
+                        [
+                            self._features_rest.detach(),
+                            split_feature_rest,
+                            dup_feature_rest,
+                        ],
+                        dim=0,
+                    )
+                )
+                self._opacities = Parameter(
+                    torch.cat(
+                        [self._opacities.detach(), split_opacities, dup_opacities],
+                        dim=0,
+                    )
+                )
                 self._scales = Parameter(torch.cat([self._scales.detach(), split_scales, dup_scales], dim=0))
                 self._quats = Parameter(torch.cat([self._quats.detach(), split_quats, dup_quats], dim=0))
                 self.point_ids = torch.cat([self.point_ids, split_ids, dup_ids], dim=0)
-                
+
                 # append zeros to the max_2Dsize tensor
                 self.max_2Dsize = torch.cat(
-                    [self.max_2Dsize, torch.zeros_like(split_scales[:, 0]), torch.zeros_like(dup_scales[:, 0])],
+                    [
+                        self.max_2Dsize,
+                        torch.zeros_like(split_scales[:, 0]),
+                        torch.zeros_like(dup_scales[:, 0]),
+                    ],
                     dim=0,
                 )
-                
+
                 split_idcs = torch.where(splits)[0]
                 param_groups = self.get_gaussian_param_groups()
                 dup_in_optim(optimizer, split_idcs, param_groups, n=nsamps)
@@ -197,7 +216,7 @@ class RigidNodes(VanillaGaussians):
                 dup_in_optim(optimizer, dup_idcs, param_groups, 1)
 
             # cull NOTE: Offset all the opacity reset logic by refine_every so that we don't
-                # save checkpoints right when the opacity is reset (saves every 2k)
+            # save checkpoints right when the opacity is reset (saves every 2k)
             if self.step % reset_interval > max(self.num_train_images, self.ctrl_cfg.refine_interval):
                 deleted_mask = self.cull_gaussians()
                 param_groups = self.get_gaussian_param_groups()
@@ -207,13 +226,15 @@ class RigidNodes(VanillaGaussians):
             # reset opacity
             if self.step % reset_interval == self.ctrl_cfg.refine_interval:
                 # NOTE: in nerfstudio, reset_value = cull_alpha_thresh * 0.8
-                    # we align to original repo of gaussians spalting
-                reset_value = torch.min(self.get_opacity.data,
-                                        torch.ones_like(self._opacities.data) * self.ctrl_cfg.reset_alpha_value)
+                # we align to original repo of gaussians spalting
+                reset_value = torch.min(
+                    self.get_opacity.data,
+                    torch.ones_like(self._opacities.data) * self.ctrl_cfg.reset_alpha_value,
+                )
                 self._opacities.data = torch.logit(reset_value)
                 # reset the exp of optimizer
                 for group in optimizer.param_groups:
-                    if group["name"] == self.class_prefix+"opacity":
+                    if group["name"] == self.class_prefix + "opacity":
                         old_params = group["params"][0]
                         param_state = optimizer.state[old_params]
                         param_state["exp_avg"] = torch.zeros_like(param_state["exp_avg"])
@@ -234,8 +255,7 @@ class RigidNodes(VanillaGaussians):
         if self.step > self.ctrl_cfg.reset_alpha_interval:
             # cull huge ones
             toobigs = (
-                torch.exp(self._scales).max(dim=-1).values > 
-                self.ctrl_cfg.cull_scale_thresh * self.scene_scale
+                torch.exp(self._scales).max(dim=-1).values > self.ctrl_cfg.cull_scale_thresh * self.scene_scale
             ).squeeze()
             culls = culls | toobigs
             if self.step < self.ctrl_cfg.stop_screen_size_at:
@@ -283,7 +303,15 @@ class RigidNodes(VanillaGaussians):
         new_quats = self._quats[split_mask].repeat(samps, 1)
         # step 6, sample new ids
         new_ids = self.point_ids[split_mask].repeat(samps, 1)
-        return new_means, new_feature_dc, new_feature_rest, new_opacities, new_scales, new_quats, new_ids
+        return (
+            new_means,
+            new_feature_dc,
+            new_feature_rest,
+            new_opacities,
+            new_scales,
+            new_quats,
+            new_ids,
+        )
 
     def dup_gaussians(self, dup_mask: torch.Tensor) -> Tuple:
         """
@@ -299,7 +327,15 @@ class RigidNodes(VanillaGaussians):
         dup_scales = self._scales[dup_mask]
         dup_quats = self._quats[dup_mask]
         dup_ids = self.point_ids[dup_mask]
-        return dup_means, dup_feature_dc, dup_feature_rest, dup_opacities, dup_scales, dup_quats, dup_ids
+        return (
+            dup_means,
+            dup_feature_dc,
+            dup_feature_rest,
+            dup_opacities,
+            dup_scales,
+            dup_quats,
+            dup_ids,
+        )
 
     def get_out_of_bound_mask(self):
         """
@@ -308,7 +344,7 @@ class RigidNodes(VanillaGaussians):
         # get the instance boxes
         per_pts_size = self.instances_size[self.point_ids[..., 0]]
         instance_pts = self._means
-        
+
         mask = (instance_pts.abs() > per_pts_size / 2).any(dim=-1)
         return mask
 
@@ -317,48 +353,35 @@ class RigidNodes(VanillaGaussians):
         transform the means of instances to world space
         according to the pose at the current frame
         """
-        assert means.shape[0] == self.point_ids.shape[0], \
-            "its a bug here, we need to pass the mask for points_ids"
-        if self.in_test_set and (
-            self.cur_frame - 1 > 0 and self.cur_frame + 1 < self.num_frames
-        ):
+        assert means.shape[0] == self.point_ids.shape[0], "its a bug here, we need to pass the mask for points_ids"
+        if self.in_test_set and (self.cur_frame - 1 > 0 and self.cur_frame + 1 < self.num_frames):
             # use the previous and next frame to interpolate the pose
             _quats_prev_frame = self.instances_quats[self.cur_frame - 1]
             _quats_next_frame = self.instances_quats[self.cur_frame + 1]
             _quats_cur_frame = self.instances_quats[self.cur_frame]
             interpolated_quats = interpolate_quats(_quats_prev_frame, _quats_next_frame)
-            
+
             inter_valid_mask = self.instances_fv[self.cur_frame - 1] & self.instances_fv[self.cur_frame + 1]
-            quats_cur_frame = torch.where(
-                inter_valid_mask[:, None], interpolated_quats, _quats_cur_frame
-            )
+            quats_cur_frame = torch.where(inter_valid_mask[:, None], interpolated_quats, _quats_cur_frame)
         else:
-            quats_cur_frame = self.instances_quats[self.cur_frame] # (num_instances, 4)
-        rot_cur_frame = quat_to_rotmat(
-            self.quat_act(quats_cur_frame)
-        )                                                          # (num_instances, 3, 3)
-        rot_per_pts = rot_cur_frame[self.point_ids[..., 0]]        # (num_points, 3, 3)
-        
-        if self.in_test_set and (
-            self.cur_frame - 1 > 0 and self.cur_frame + 1 < self.num_frames
-        ):
+            quats_cur_frame = self.instances_quats[self.cur_frame]  # (num_instances, 4)
+        rot_cur_frame = quat_to_rotmat(self.quat_act(quats_cur_frame))  # (num_instances, 3, 3)
+        rot_per_pts = rot_cur_frame[self.point_ids[..., 0]]  # (num_points, 3, 3)
+
+        if self.in_test_set and (self.cur_frame - 1 > 0 and self.cur_frame + 1 < self.num_frames):
             _prev_ins_trans = self.instances_trans[self.cur_frame - 1]
             _next_ins_trans = self.instances_trans[self.cur_frame + 1]
             _cur_ins_trans = self.instances_trans[self.cur_frame]
             interpolated_trans = (_prev_ins_trans + _next_ins_trans) * 0.5
-            
+
             inter_valid_mask = self.instances_fv[self.cur_frame - 1] & self.instances_fv[self.cur_frame + 1]
-            trans_cur_frame = torch.where(
-                inter_valid_mask[:, None], interpolated_trans, _cur_ins_trans
-            )
+            trans_cur_frame = torch.where(inter_valid_mask[:, None], interpolated_trans, _cur_ins_trans)
         else:
-            trans_cur_frame = self.instances_trans[self.cur_frame] # (num_instances, 3)
+            trans_cur_frame = self.instances_trans[self.cur_frame]  # (num_instances, 3)
         trans_per_pts = trans_cur_frame[self.point_ids[..., 0]]
-        
+
         # transform the means to world space
-        means = torch.bmm(
-            rot_per_pts, means.unsqueeze(-1)
-        ).squeeze(-1) + trans_per_pts
+        means = torch.bmm(rot_per_pts, means.unsqueeze(-1)).squeeze(-1) + trans_per_pts
         return means
 
     def transform_quats(self, quats: torch.Tensor) -> torch.Tensor:
@@ -366,11 +389,10 @@ class RigidNodes(VanillaGaussians):
         transform the quats of instances to world space
         according to the pose at the current frame
         """
-        assert quats.shape[0] == self.point_ids.shape[0], \
-            "its a bug here, we need to pass the mask for points_ids"
+        assert quats.shape[0] == self.point_ids.shape[0], "its a bug here, we need to pass the mask for points_ids"
         global_quats_cur_frame = self.instances_quats[self.cur_frame]
         global_quats_per_pts = global_quats_cur_frame[self.point_ids[..., 0]]
-            
+
         global_quats_per_pts = self.quat_act(global_quats_per_pts)
         _quats = self.quat_act(quats)
         return quat_mult(global_quats_per_pts, _quats)
@@ -379,10 +401,10 @@ class RigidNodes(VanillaGaussians):
         filter_mask = torch.ones_like(self._means[:, 0], dtype=torch.bool)
         self.filter_mask = filter_mask
         # NOTE: hack here, need to consider a gaussian filter for efficient rendering
-        
+
         world_means = self.transform_means(self._means)
         world_quats = self.transform_quats(self._quats)
-        
+
         # get colors of gaussians
         colors = torch.cat((self._features_dc[:, None, :], self._features_rest), dim=1)
         if self.sh_degree > 0:
@@ -393,14 +415,14 @@ class RigidNodes(VanillaGaussians):
             rgbs = torch.clamp(rgbs + 0.5, 0.0, 1.0)
         else:
             rgbs = torch.sigmoid(colors[:, 0, :])
-        
+
         valid_mask = self.get_pts_valid_mask()
-            
+
         activated_opacities = self.get_opacity * valid_mask.float().unsqueeze(-1)
         activated_scales = self.get_scaling
         activated_rotations = self.quat_act(world_quats)
         actovated_colors = rgbs
-        
+
         # collect gaussians information
         gs_dict = dict(
             _means=world_means[filter_mask],
@@ -409,14 +431,14 @@ class RigidNodes(VanillaGaussians):
             _scales=activated_scales[filter_mask],
             _quats=activated_rotations[filter_mask],
         )
-        
+
         # check nan and inf in gs_dict
         for k, v in gs_dict.items():
             if torch.isnan(v).any():
                 raise ValueError(f"NaN detected in gaussian {k} at step {self.step}")
             if torch.isinf(v).any():
                 raise ValueError(f"Inf detected in gaussian {k} at step {self.step}")
-        
+
         self._gs_cache = {
             "_scales": activated_scales[filter_mask],
         }
@@ -432,7 +454,7 @@ class RigidNodes(VanillaGaussians):
         activated_local_rotations = self.quat_act(self._quats[pts_mask])
         gaussian_dict = {
             "means": local_means,
-            "opacities": activated_opacities,            
+            "opacities": activated_opacities,
             "scales": activated_scales,
             "quats": activated_local_rotations,
             "sh_dcs": self._features_dc[pts_mask],
@@ -440,7 +462,7 @@ class RigidNodes(VanillaGaussians):
             "ids": self.point_ids[pts_mask],
         }
         return gaussian_dict
-    
+
     def compute_reg_loss(self) -> Dict[str, torch.Tensor]:
         loss_dict = super().compute_reg_loss()
         scaling_reg = self.reg_cfg.get("scaling_reg", None)
@@ -449,7 +471,7 @@ class RigidNodes(VanillaGaussians):
             precentile = scaling_reg.precentile
             stop_after = scaling_reg.stop_after
             start_after = scaling_reg.start_after
-            
+
             if self.step < stop_after and self.step > start_after and w > 0:
                 scale_prod = self._gs_cache["_scales"].prod(dim=-1)
                 p = torch.kthvalue(scale_prod, int(scale_prod.shape[0] * precentile)).values
@@ -466,45 +488,47 @@ class RigidNodes(VanillaGaussians):
                     fi_interval = random.randint(1, trans_cfg.smooth_range)
                     if self.cur_frame >= fi_interval and self.cur_frame < self.num_frames - fi_interval:
                         valid_mask = (
-                            self.instances_fv[self.cur_frame - fi_interval] & \
-                            self.instances_fv[self.cur_frame + fi_interval] & \
-                            self.instances_fv[self.cur_frame]
+                            self.instances_fv[self.cur_frame - fi_interval]
+                            & self.instances_fv[self.cur_frame + fi_interval]
+                            & self.instances_fv[self.cur_frame]
                         )
                         if valid_mask.sum() > 0:
                             cur_trans = self.instances_trans[self.cur_frame]
                             pre_trans = self.instances_trans[self.cur_frame - fi_interval].data
                             next_trans = self.instances_trans[self.cur_frame + fi_interval].data
-                            loss = (next_trans[valid_mask] + pre_trans[valid_mask] - 2 * cur_trans[valid_mask]).abs().mean()
+                            loss = (
+                                (next_trans[valid_mask] + pre_trans[valid_mask] - 2 * cur_trans[valid_mask])
+                                .abs()
+                                .mean()
+                            )
                             loss_dict["trans_temporal_smooth"] = loss * trans_cfg.w
         return loss_dict
 
     def state_dict(self) -> Dict:
         state_dict = super().state_dict()
-        state_dict.update({
-            "points_ids": self.point_ids,
-            "instances_size": self.instances_size,
-            "instances_fv": self.instances_fv,
-        })
+        state_dict.update(
+            {
+                "points_ids": self.point_ids,
+                "instances_size": self.instances_size,
+                "instances_fv": self.instances_fv,
+            }
+        )
         return state_dict
-    
+
     def load_state_dict(self, state_dict: Dict, **kwargs) -> str:
         self.point_ids = state_dict.pop("points_ids")
         self.instances_size = state_dict.pop("instances_size")
         self.instances_fv = state_dict.pop("instances_fv")
-        self.instances_trans = Parameter(
-            torch.zeros(self.num_frames, self.num_instances, 3, device=self.device)
-        )
-        self.instances_quats = Parameter(
-            torch.zeros(self.num_frames, self.num_instances, 4, device=self.device)
-        )
+        self.instances_trans = Parameter(torch.zeros(self.num_frames, self.num_instances, 3, device=self.device))
+        self.instances_quats = Parameter(torch.zeros(self.num_frames, self.num_instances, 4, device=self.device))
         msg = super().load_state_dict(state_dict, **kwargs)
         return msg
-    
+
     # editting functions
     def remove_instances(self, remove_id_list: List[int]) -> None:
         """
         remove instances from the model
-        
+
         Args:
             remove_id_list: list of instance ids to be removed
         """
@@ -517,7 +541,7 @@ class RigidNodes(VanillaGaussians):
             self._features_rest = Parameter(self._features_rest[mask])
             self._opacities = Parameter(self._opacities[mask])
             self.point_ids = self.point_ids[mask]
-        
+
     def collect_gaussians_from_ids(self, ids: List[int]) -> Dict:
         gaussian_dict = {}
         for id in ids:
@@ -537,7 +561,7 @@ class RigidNodes(VanillaGaussians):
     def replace_instances(self, replace_dict: Dict[int, int]) -> None:
         """
         replace instances from the model
-        
+
         Args:
             replace_dict: {
                 ins_id(to be replaced): ins_id(replace with)
@@ -555,14 +579,17 @@ class RigidNodes(VanillaGaussians):
             self._features_rest = Parameter(torch.cat([self._features_rest, new_gaussian["_features_rest"]], dim=0))
             self._opacities = Parameter(torch.cat([self._opacities, new_gaussian["_opacities"]], dim=0))
             # keeps original point ids
-            self.point_ids = torch.cat([self.point_ids, torch.full_like(new_gaussian["point_ids"], ins_id)], dim=0)
-    
+            self.point_ids = torch.cat(
+                [self.point_ids, torch.full_like(new_gaussian["point_ids"], ins_id)],
+                dim=0,
+            )
+
     def export_gaussians_to_ply(self, alpha_thresh: float, instance_id: List[int] = None) -> Dict[str, torch.Tensor]:
         pts_mask = self.point_ids[..., 0] == instance_id
-        
+
         means = self._means[pts_mask]
         direct_color = self.colors[pts_mask]
-        
+
         activated_opacities = self.get_opacity[pts_mask]
         mask = activated_opacities.squeeze() > alpha_thresh
         return {

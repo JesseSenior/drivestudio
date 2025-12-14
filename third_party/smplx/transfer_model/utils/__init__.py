@@ -14,12 +14,12 @@
 #
 # Contact: Vassilis Choutas, vassilis.choutas@tuebingen.mpg.de
 
-from .np_utils import to_np, rel_change
-from .torch_utils import from_torch
-from .timer import Timer, timer_decorator
-from .typing import *
-from .pose_utils import batch_rodrigues, batch_rot2aa
-from .metrics import v2v
-from .def_transfer import read_deformation_transfer, apply_deformation_transfer
+from .def_transfer import apply_deformation_transfer, read_deformation_transfer
 from .mesh_utils import get_vertices_per_edge
+from .metrics import v2v
+from .np_utils import rel_change, to_np
 from .o3d_utils import np_mesh_to_o3d
+from .pose_utils import batch_rodrigues, batch_rot2aa
+from .timer import Timer, timer_decorator
+from .torch_utils import from_torch
+from .typing import *

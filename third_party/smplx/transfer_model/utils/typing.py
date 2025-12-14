@@ -14,14 +14,15 @@
 #
 # Contact: Vassilis Choutas, vassilis.choutas@tuebingen.mpg.de
 
-from typing import NewType, List, Union
+from typing import NewType
+
 import numpy as np
 import torch
 
 __all__ = [
-    'Tensor',
-    'Array',
+    "Tensor",
+    "Array",
 ]
 
-Tensor = NewType('Tensor', torch.Tensor)
-Array = NewType('Array', np.ndarray)
+Tensor = NewType("Tensor", torch.Tensor)
+Array = NewType("Array", np.ndarray)

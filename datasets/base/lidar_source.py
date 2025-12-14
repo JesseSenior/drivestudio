@@ -3,7 +3,6 @@ import logging
 from typing import Dict
 
 import torch
-import torch.nn.functional as F
 from omegaconf import OmegaConf
 from torch import Tensor
 
@@ -111,9 +110,7 @@ class SceneLidarSource(abc.ABC):
             given percentiles of the lidar coordinates in each dimension.
         """
         assert (
-            self.origins is not None
-            and self.directions is not None
-            and self.ranges is not None
+            self.origins is not None and self.directions is not None and self.ranges is not None
         ), "Lidar points not loaded, cannot compute aabb."
         logger.info("[Lidar] Computing auto AABB based on downsampled lidar points....")
 
@@ -121,9 +118,7 @@ class SceneLidarSource(abc.ABC):
 
         # downsample the lidar points by uniformly sampling a subset of them
         lidar_pts = lidar_pts[
-            torch.randperm(len(lidar_pts))[
-                : int(len(lidar_pts) / self.data_cfg.lidar_downsample_factor)
-            ]
+            torch.randperm(len(lidar_pts))[: int(len(lidar_pts) / self.data_cfg.lidar_downsample_factor)]
         ]
         # compute the aabb by taking the given percentiles of the lidar coordinates in each dimension
         aabb_min = torch.quantile(lidar_pts, self.data_cfg.lidar_percentile, dim=0)
@@ -137,7 +132,7 @@ class SceneLidarSource(abc.ABC):
         aabb = torch.tensor([*aabb_min, *aabb_max])
         logger.info(f"[Lidar] Auto AABB from LiDAR: {aabb}")
         return aabb
-    
+
     @property
     def pts_xyz(self) -> Tensor:
         """
@@ -146,7 +141,7 @@ class SceneLidarSource(abc.ABC):
             shape: (num_lidar_points, 3)
         """
         return self.origins + self.directions * self.ranges
-    
+
     @property
     def num_points(self) -> int:
         """
@@ -199,9 +194,7 @@ class SceneLidarSource(abc.ABC):
 
     def register_normalized_timestamps(self) -> None:
         # normalized timestamps are between 0 and 1
-        normalized_time = (self._timesteps - self._timesteps.min()) / (
-            self._timesteps.max() - self._timesteps.min()
-        )
+        normalized_time = (self._timesteps - self._timesteps.min()) / (self._timesteps.max() - self._timesteps.min())
         self._normalized_time = normalized_time.to(self.device)
         self._unique_normalized_timestamps = self._normalized_time.unique()
 
@@ -213,9 +206,7 @@ class SceneLidarSource(abc.ABC):
         Returns:
             the closest timestep to the given timestamp.
         """
-        return torch.argmin(
-            torch.abs(self.unique_normalized_timestamps - normed_timestamp)
-        )
+        return torch.argmin(torch.abs(self.unique_normalized_timestamps - normed_timestamp))
 
     def get_lidar_rays(self, time_idx: int) -> Dict[str, Tensor]:
         """
@@ -238,7 +229,7 @@ class SceneLidarSource(abc.ABC):
             "lidar_mask": self.timesteps == time_idx,
             "lidar_flows": flows,
         }
-    
+
     def delete_invisible_pts(self) -> None:
         """
         Clear the unvisible points.

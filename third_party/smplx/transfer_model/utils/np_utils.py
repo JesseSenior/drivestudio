@@ -13,9 +13,7 @@
 # for Intelligent Systems. All rights reserved.
 #
 # Contact: Vassilis Choutas, vassilis.choutas@tuebingen.mpg.de
-from __future__ import absolute_import
-from __future__ import print_function
-from __future__ import division
+from __future__ import absolute_import, division, print_function
 
 import numpy as np
 
@@ -29,6 +27,6 @@ def max_grad_change(grad_arr):
 
 
 def to_np(array, dtype=np.float32):
-    if hasattr(array, 'todense'):
+    if hasattr(array, "todense"):
         array = array.todense()
     return np.array(array, dtype=dtype)

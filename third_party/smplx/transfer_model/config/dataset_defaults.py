@@ -14,19 +14,20 @@
 #
 # Contact: Vassilis Choutas, vassilis.choutas@tuebingen.mpg.de
 
-from omegaconf import OmegaConf
 from dataclasses import dataclass
+
+from omegaconf import OmegaConf
 
 
 @dataclass
 class MeshFolder:
-    data_folder: str = 'data/meshes'
+    data_folder: str = "data/meshes"
 
 
 @dataclass
 class DatasetConfig:
     num_workers: int = 0
-    name: str = 'mesh-folder'
+    name: str = "mesh-folder"
     mesh_folder: MeshFolder = MeshFolder()
 
 
