@@ -318,6 +318,60 @@ class NonRigidNodes(DeformableGaussians):
         }
         return gs_dict
 
+    def split_gaussians(self, split_mask: torch.Tensor, samps: int) -> Tuple:
+        """
+        Override split_gaussians to include point_ids
+        """
+        # Get split results from parent class
+        (
+            split_means,
+            split_feature_dc,
+            split_feature_rest,
+            split_opacities,
+            split_scales,
+            split_quats,
+        ) = super().split_gaussians(split_mask, samps)
+
+        # Compute split_ids: repeat the ids of split gaussians
+        split_ids = self.point_ids[split_mask].repeat(samps, 1)
+
+        return (
+            split_means,
+            split_feature_dc,
+            split_feature_rest,
+            split_opacities,
+            split_scales,
+            split_quats,
+            split_ids,
+        )
+
+    def dup_gaussians(self, dup_mask: torch.Tensor) -> Tuple:
+        """
+        Override dup_gaussians to include point_ids
+        """
+        # Get dup results from parent class
+        (
+            dup_means,
+            dup_feature_dc,
+            dup_feature_rest,
+            dup_opacities,
+            dup_scales,
+            dup_quats,
+        ) = super().dup_gaussians(dup_mask)
+
+        # Compute dup_ids: use the ids of duplicated gaussians
+        dup_ids = self.point_ids[dup_mask]
+
+        return (
+            dup_means,
+            dup_feature_dc,
+            dup_feature_rest,
+            dup_opacities,
+            dup_scales,
+            dup_quats,
+            dup_ids,
+        )
+
     def refinement_after(self, step: int, optimizer: torch.optim.Optimizer) -> None:
         """Densification and pruning after step."""
         assert step == self.step

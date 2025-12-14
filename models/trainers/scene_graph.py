@@ -104,7 +104,9 @@ class MultiTrainer(BasicTrainer):
 
         if "NonRigidNodes" in self.model_config:
             nonrigidnode_pts_dict = dataset.get_init_objects(
-                cur_node_type="NonRigidNodes", **self.model_config["NonRigidNodes"]["init"]
+                cur_node_type="NonRigidNodes",
+                exclude_smpl="SMPLNodes" in self.model_config,
+                **self.model_config["NonRigidNodes"]["init"],
             )
 
         allnode_pts_dict = {

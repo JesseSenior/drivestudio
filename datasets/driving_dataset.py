@@ -27,6 +27,7 @@ NAME_TO_NODE = {
     "RigidNodes": ModelType.RigidNodes,
     "SMPLNodes": ModelType.SMPLNodes,
     "DeformableNodes": ModelType.DeformableNodes,
+    "NonRigidNodes": ModelType.DeformableNodes,
 }
 
 
@@ -74,9 +75,9 @@ class DrivingDataset(SceneDataset):
 
         # ---- create data source ---- #
         self.pixel_source, self.lidar_source = self.build_data_source()
-        assert (
-            self.pixel_source is not None and self.lidar_source is not None
-        ), "Must have both pixel source and lidar source"
+        assert self.pixel_source is not None and self.lidar_source is not None, (
+            "Must have both pixel source and lidar source"
+        )
         self.project_lidar_pts_on_images(delete_out_of_view_points=True)
         self.aabb = self.get_aabb()
 
@@ -177,9 +178,9 @@ class DrivingDataset(SceneDataset):
         device: torch.device = torch.device("cpu"),
     ) -> Tensor:
         assert self.lidar_source is not None, "Must have lidar source if you want to get init pcd"
-        assert (num_samples is None) != (
-            downsample_factor is None
-        ), "Must provide either num_samples or downsample_factor, but not both"
+        assert (num_samples is None) != (downsample_factor is None), (
+            "Must provide either num_samples or downsample_factor, but not both"
+        )
         if downsample_factor is not None:
             num_samples = int(len(self.lidar_source.pts_xyz) / downsample_factor)
         if num_samples > len(self.lidar_source.pts_xyz):
@@ -207,9 +208,9 @@ class DrivingDataset(SceneDataset):
     def seg_dynamic_instances_in_lidar_frame(self, instance_ids: Union[int, list], frame_idx: int):
         if isinstance(instance_ids, int):
             instance_num = len(self.pixel_source.instances_pose[frame_idx])
-            assert (
-                instance_ids < instance_num
-            ), f"instance_id {instance_ids} is larger than the number of instances {instance_num}"
+            assert instance_ids < instance_num, (
+                f"instance_id {instance_ids} is larger than the number of instances {instance_num}"
+            )
             if instance_ids == -1:
                 instance_ids = list(range(instance_num))
             else:
@@ -261,7 +262,7 @@ class DrivingDataset(SceneDataset):
 
     def get_init_objects(
         self,
-        cur_node_type: Literal["RigidNodes", "DeformableNodes"],
+        cur_node_type: Literal["RigidNodes", "DeformableNodes", "NonRigidNodes"],
         instance_max_pts: int = 5000,
         only_moving: bool = True,
         traj_length_thres: float = 0.5,
@@ -295,8 +296,8 @@ class DrivingDataset(SceneDataset):
                 if not instance_active:
                     continue
 
-                if cur_node_type == "DeformableNodes":
-                    if not (o_type == ModelType.DeformableNodes or o_type == ModelType.SMPLNodes):
+                if cur_node_type in ("DeformableNodes", "NonRigidNodes"):
+                    if o_type not in (ModelType.DeformableNodes, ModelType.SMPLNodes):
                         continue
                 elif cur_node_type == "RigidNodes":
                     if not o_type == ModelType.RigidNodes:
@@ -304,7 +305,9 @@ class DrivingDataset(SceneDataset):
 
                 if exclude_smpl:
                     # objects with smpl pose will be modeled by SMPLNodes
-                    assert cur_node_type == "DeformableNodes", "Only exclude SMPL for DeformableNodes"
+                    assert cur_node_type in ("DeformableNodes", "NonRigidNodes"), (
+                        "Only exclude SMPL for DeformableNodes or NonRigidNodes"
+                    )
                     true_id = self.pixel_source.instances_true_id[ins_id].item()
                     if true_id in self.pixel_source.smpl_human_all.keys():
                         continue
