@@ -38,7 +38,7 @@ trainer:
     xyz:
       lr: 1.6e-04
       lr_final: 1.6e-06
-      scale_factor: scene_radius # str or float, if "scene_scale", scale the learning rate by the scene scale
+      scale_factor: scene_radius # str or float, if "scene_radius", scale the learning rate by the scene scale
     sh_dc:
       lr: 0.0025
     sh_rest:
@@ -113,8 +113,7 @@ model:
     type: models.nodes.NonRigidNodes
     init:
       instance_max_pts: 5000 # max initial points for each instance
-      only_moving: true # only optimize moving instances
-      traj_length_thres: 0.5 # threshold of trajectory length for moving instances
+      only_moving: false # only optimize moving instances
     networks:
       D: 8 # DeformNetwork depth
       W: 256 # DeformNetwork width
@@ -132,19 +131,26 @@ model:
         w: 1.
         step_interval: 10
         max_gauss_ratio: 10.
+      out_of_bound:
+        w: 0.01
+        step_interval: 10
     optim:
-      xyz:
-        lr: 1.6e-04
-        lr_final: 1.6e-06
-      deform_network:
-        lr: 1.6e-04
-        lr_final: 1.6e-06
       ins_rotation:
         lr: 0.00001
         lr_final: 0.000005
       ins_translation:
         lr: 0.0005
         lr_final: 0.0001
+      # FreeTimeGS temporal parameters
+      xyz_t:
+        lr: 0.0001
+        lr_final: 0.00001
+      scaling_t:
+        lr: 0.005
+      velocities:
+        lr: 1.6e-04
+        lr_final: 1.6e-06
+        scale_factor: scene_radius
   Sky:
     type: models.modules.EnvLight
     params:

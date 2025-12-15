@@ -608,7 +608,7 @@ class BasicTrainer(nn.Module):
         # dynamic region loss
         dynamic_region_weighted_losses = self.losses_dict.get("dynamic_region", None)
         if dynamic_region_weighted_losses is not None:
-            weight_factor = dynamic_region_weighted_losses.get("w", 1.0)
+            weight_factor = dynamic_region_weighted_losses.get("factor", 1.0)
             start_from = dynamic_region_weighted_losses.get("start_from", 0)
             if self.step == start_from:
                 self.render_dynamic_mask = True
@@ -734,6 +734,8 @@ class BasicTrainer(nn.Module):
         """Callable function for the viewer."""
         W, H = img_wh
         c2w = camera_state.c2w
+        c2w[2:3, :3] *= -1  # OpenGL -> OpenCV
+
         K = camera_state.get_K(img_wh)
         c2w = torch.from_numpy(c2w).float().to(self.device)
         K = torch.from_numpy(K).float().to(self.device)

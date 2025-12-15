@@ -43,7 +43,7 @@ trainer:
     xyz:
       lr: 1.6e-04
       lr_final: 1.6e-06
-      scale_factor: scene_radius # str or float, if "scene_scale", scale the learning rate by the scene scale
+      scale_factor: scene_radius # str or float, if "scene_radius", scale the learning rate by the scene scale
     sh_dc:
       lr: 0.0025
     sh_rest:

@@ -1,14 +1,15 @@
 """
 NonRigidNodes: Non-rigid deformable nodes representation
 
-Combines DeformableGaussians deformation with RigidNodes multi-instance management.
+Combines FreeTimeGS temporal Gaussian representation with RigidNodes multi-instance management.
 This module is designed for representing non-rigid objects (e.g., humans, deformable clothing)
-with per-instance rigid poses and global deformable transformations.
+with per-instance rigid poses and global temporal dynamics.
 
 Architecture:
-- Inherits from DeformableGaussians for deformation network and temporal handling
+- Inherits from VanillaGaussians for base Gaussian management
 - Adds instance management from RigidNodes (per-frame poses, visibility masks, point IDs)
-- Supports multiple instances with shared deformation network but instance-specific rigid poses
+- Implements FreeTimeGS temporal representation (xyz_t, scaling_t, velocities)
+- Supports multiple instances with instance-specific rigid poses and shared temporal parameters
 """
 
 import logging
@@ -31,39 +32,47 @@ from models.gaussians.basics import (
     random_quat_tensor,
     remove_from_optim,
 )
-from models.gaussians.deformgs import DeformableGaussians
+from models.gaussians.vanilla import VanillaGaussians
 
 logger = logging.getLogger()
 
 
-class NonRigidNodes(DeformableGaussians):
+class NonRigidNodes(VanillaGaussians):
     """
     Non-rigid deformable nodes with multi-instance support.
 
     This class combines:
-    1. DeformableGaussians: Per-point deformation based on time
-    2. RigidNodes: Multi-instance support with per-frame poses and visibility masks
+    1. FreeTimeGS temporal representation: Per-point temporal filtering and motion compensation
+    2. Multi-instance support: Per-frame rigid poses and visibility masks
 
-    Each instance has:
-    - Canonical point set (_means)
-    - Per-frame rigid pose (rotation + translation)
-    - Shared deformation network that produces per-point deformations
-    - Per-frame visibility mask
+    Each point has:
+    - Canonical position in object space (_means)
+    - Temporal center and scale (_xyz_t, _scaling_t) for time filtering
+    - Velocity vector (_velocities) for motion compensation
+    - Instance ID (point_ids) mapping to instance pose and visibility
 
-    Rendering order:
-    1. Apply deformation: canonical_means + deformation delta
-    2. Apply instance rigid pose: rotate and translate deformed means
-    3. Apply visibility mask: zero out opacities for invalid instances
+    Rendering pipeline:
+    1. Apply temporal filtering and motion compensation based on FreeTimeGS parameters
+    2. Transform to world space using instance rigid poses (rotation + translation)
+    3. Apply instance visibility mask and temporal opacity modulation
     """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
         # Instance management attributes will be initialized in create_from_pcd
         self.instances_size = None  # (num_instances, 3)
         self.instances_fv = None  # (num_frames, num_instances)
         self.instances_quats = None  # (num_frames, num_instances, 4)
         self.instances_trans = None  # (num_frames, num_instances, 3)
         self.point_ids = None  # (num_points, 1)
+
+        # FreeTimeGS temporal parameters
+        self._xyz_t = None  # (num_points, 1) - temporal center for each point
+        self._scaling_t = None  # (num_points, 1) - temporal scale (log space) for each point
+        self._velocities = None  # (num_points, 3) - 3D velocity vector for motion compensation
+        self.marginal_th = 0.05  # threshold for temporal filtering
+        self.duration = 1.0  # total video duration in normalized time
 
     @property
     def num_instances(self):
@@ -134,6 +143,64 @@ class NonRigidNodes(DeformableGaussians):
         self.instances_quats = Parameter(self.quat_act(instances_quats))  # (num_frames, num_instances, 4)
         self.instances_trans = Parameter(instances_trans)  # (num_frames, num_instances, 3)
 
+        # Initialize FreeTimeGS temporal parameters
+        # Initialize temporal centers and scales based on each instance's trajectory time range
+        self._xyz_t = torch.zeros(self.num_points, 1, device=self.device)
+        self._scaling_t = torch.zeros(self.num_points, 1, device=self.device)
+
+        # For each instance, compute its valid time range and initialize temporal parameters
+        point_idx = 0
+        num_frames_total = instance_pts_dict[list(instance_pts_dict.keys())[0]]["frame_info"].shape[0]
+
+        for id_in_model, (id_in_dataset, v) in enumerate(instance_pts_dict.items()):
+            num_pts = v["num_pts"]
+            frame_info = v["frame_info"]
+
+            # Get valid frames for this instance
+            valid_frames = torch.where(frame_info)[0]
+            if len(valid_frames) > 0:
+                # Compute time range: normalize frame indices to [0, 1]
+                t_start = valid_frames[0].float() / num_frames_total
+                t_end = valid_frames[-1].float() / num_frames_total
+                duration_instance = t_end - t_start
+
+                # Randomly initialize temporal centers within the valid time range
+                t_centers = torch.rand(num_pts, 1, device=self.device) * duration_instance + t_start
+                self._xyz_t[point_idx : point_idx + num_pts] = t_centers
+
+                # Set temporal scale: use average frame interval
+                num_valid_frames = len(valid_frames)
+                if num_valid_frames > 1:
+                    # Average frame interval = duration / (num_frames - 1)
+                    span = duration_instance / (num_valid_frames - 1)
+                else:
+                    # Fallback for single frame
+                    span = 0.5 * self.duration
+                scale_t_mult = 1.0
+                sigma_t = torch.sqrt(
+                    torch.tensor((span * scale_t_mult) ** 2 / (-2 * torch.log(torch.tensor(self.marginal_th))))
+                )
+                log_sigma_t = torch.log(torch.sqrt(sigma_t) * torch.ones(num_pts, 1, device=self.device))
+                self._scaling_t[point_idx : point_idx + num_pts] = log_sigma_t
+            else:
+                # Fallback for instances with no valid frames
+                self._xyz_t[point_idx : point_idx + num_pts] = 0
+                span = 0.5 * self.duration
+                scale_t_mult = 1.0
+                sigma_t = torch.sqrt(
+                    torch.tensor((span * scale_t_mult) ** 2 / (-2 * torch.log(torch.tensor(self.marginal_th))))
+                )
+                log_sigma_t = torch.log(torch.sqrt(sigma_t) * torch.ones(num_pts, 1, device=self.device))
+                self._scaling_t[point_idx : point_idx + num_pts] = log_sigma_t
+
+            point_idx += num_pts
+
+        self._xyz_t = Parameter(self._xyz_t)
+        self._scaling_t = Parameter(self._scaling_t)
+
+        # Velocity vector: initialize to zero (will be learned during training)
+        self._velocities = Parameter(torch.zeros(self.num_points, 3, device=self.device))
+
         # Initialize spherical harmonics
         dim_sh = num_sh_bases(self.sh_degree)
         fused_color = RGB2SH(init_colors)
@@ -165,39 +232,55 @@ class NonRigidNodes(DeformableGaussians):
     def get_param_groups(self) -> Dict[str, List[Parameter]]:
         """Return parameter groups for optimization."""
         param_groups = self.get_gaussian_param_groups()
-        param_groups[self.class_prefix + "deform_network"] = list(self.deform_network.parameters())
         param_groups[self.class_prefix + "ins_rotation"] = [self.instances_quats]
         param_groups[self.class_prefix + "ins_translation"] = [self.instances_trans]
+
+        # Add FreeTimeGS temporal parameters to optimization
+        param_groups[self.class_prefix + "xyz_t"] = [self._xyz_t]
+        param_groups[self.class_prefix + "scaling_t"] = [self._scaling_t]
+        param_groups[self.class_prefix + "velocities"] = [self._velocities]
+
         return param_groups
 
-    def get_deformation(self, canonical_means: torch.Tensor) -> Tuple:
+    def get_deformation(self) -> Tuple:
         """
-        Get per-point deformations based on time.
+        Get per-point deformations based on FreeTimeGS temporal representation.
 
-        This uses the global deformation network to compute deformations
-        that are applied before the instance-specific rigid poses.
+        This implements FreeTimeGS temporal filtering and motion compensation:
+        1. Temporal filtering: compute marginal probability based on temporal distance
+        2. Motion compensation: apply velocity-based displacement
+        3. Opacity modulation: return temporal weight for opacity
+
+        Returns:
+            (delta_xyz, delta_opacities) where:
+            - delta_xyz: motion displacement (num_points, 3)
+            - delta_opacities: temporal opacity weight, marginal_t (num_points,)
         """
-        if not self.defrom_gs:
-            return None, None, None
+        t_query = self.normalized_timestamps[self.cur_frame]
 
-        t = self.normalized_timestamps[self.cur_frame]
-        t = t.unsqueeze(0).repeat(self.num_points, 1)
-        normed_canonical_means = self.contract(canonical_means, self.bbox)
+        # ============= Temporal Filtering =============
+        # Compute temporal distance from each point's temporal center
+        # marginal_t = exp(-0.5 * ((t_query - t_p) / sigma_t)^2)
+        delta_t = t_query - self._xyz_t.squeeze(-1)  # (num_points,)
+        sigma_t = torch.exp(self._scaling_t.squeeze(-1))  # (num_points,) - activate from log space
 
-        ast_noise = (
-            torch.randn(1, 1, device=self.device).expand(self.num_points, -1)
-            * self.time_interval
-            * self.smooth_term(self.step)
-        )
+        # Compute marginal temporal probability (used for opacity modulation)
+        marginal_t = torch.exp(-0.5 * (delta_t / (sigma_t + 1e-8)) ** 2)  # (num_points,)
 
-        delta_xyz, delta_quat, delta_scale = self.deform_network(normed_canonical_means.data, t + ast_noise)
-        return delta_xyz, delta_quat, delta_scale
+        # Apply temporal threshold to filter out points with low temporal probability
+        marginal_t = torch.where(marginal_t > self.marginal_th, marginal_t, torch.zeros_like(marginal_t))
 
-    def contract(self, x: torch.Tensor, aabb: torch.Tensor) -> torch.Tensor:
-        """Contract coordinates to unit cube using piecewise projective function."""
-        from models.gaussians.deformgs import contract
+        # ============= Motion Compensation =============
+        # Apply velocity-based motion compensation: x_deformed = x + v * Δt
+        # Δt = t_query - t_p (same as delta_t)
+        delta_xyz = self._velocities * delta_t.unsqueeze(-1)  # (num_points, 3)
 
-        return contract(x, aabb)
+        # ============= Opacity Modulation =============
+        # delta_opacities is the marginal_t weight that modulates opacity
+        # Final opacity = sigmoid(raw_opacity) * delta_opacities (marginal_t)
+        delta_opacities = marginal_t  # (num_points,)
+
+        return delta_xyz, delta_opacities
 
     def transform_means(self, means: torch.Tensor) -> torch.Tensor:
         """Transform means to world space applying instance rigid pose."""
@@ -245,19 +328,31 @@ class NonRigidNodes(DeformableGaussians):
         _quats = self.quat_act(quats)
         return quat_mult(global_quats_per_pts, _quats)
 
+    def set_cur_frame(self, frame_id: int):
+        self.cur_frame = frame_id
+
+    def register_normalized_timestamps(self, normalized_timestamps: int):
+        self.normalized_timestamps = normalized_timestamps
+        self.time_interval = 1 / len(normalized_timestamps)
+
     def get_gaussians(self, cam: dataclass_camera) -> Dict[str, torch.Tensor]:
-        """Get Gaussian properties for rendering."""
+        """Get Gaussian properties for rendering.
+
+        Pipeline:
+        1. Canonical means in object space
+        2. Apply temporal filtering and motion compensation (FreeTimeGS)
+        3. Transform to world space with instance rigid poses
+        4. Apply instance visibility mask and opacity modulation
+        """
         filter_mask = torch.ones_like(self._means[:, 0], dtype=torch.bool)
         self.filter_mask = filter_mask
 
-        # Apply deformations
-        delta_xyz, delta_quat, delta_scale = None, None, None
-        if self.defrom_gs:
-            delta_xyz, delta_quat, delta_scale = self.get_deformation(self._means)
-            if self.delta_xyz_rescale:
-                delta_xyz = delta_xyz * self.scene_scale
+        # Apply FreeTimeGS temporal filtering and motion compensation
+        delta_xyz, delta_opacities = None, None
+        if hasattr(self, "normalized_timestamps"):
+            delta_xyz, delta_opacities = self.get_deformation()
 
-        # Apply deformation to means
+        # Apply motion compensation to means
         if delta_xyz is not None:
             deformed_means = self._means + delta_xyz
         else:
@@ -266,18 +361,9 @@ class NonRigidNodes(DeformableGaussians):
         # Transform to world space with instance poses
         world_means = self.transform_means(deformed_means)
 
-        # Apply deformation to quaternions
-        if delta_quat is not None:
-            quats = self.get_quats + delta_quat
-        else:
-            quats = self.get_quats
-        world_quats = self.transform_quats(quats)
-
-        # Apply deformation to scales
-        if delta_scale is not None:
-            activated_scales = torch.exp(self._scales + delta_scale)
-        else:
-            activated_scales = torch.exp(self._scales)
+        # Get quaternions and scales (no deformation on these)
+        world_quats = self.transform_quats(self.get_quats)
+        activated_scales = torch.exp(self._scales)
 
         # Compute colors using spherical harmonics
         colors = torch.cat((self._features_dc[:, None, :], self._features_rest), dim=1)
@@ -290,10 +376,16 @@ class NonRigidNodes(DeformableGaussians):
         else:
             rgbs = torch.sigmoid(colors[:, 0, :])
 
-        # Apply instance validity mask
-        valid_mask = self.get_pts_valid_mask()
+        # Apply instance validity mask and temporal opacity modulation
+        instance_valid_mask = self.get_pts_valid_mask()
 
-        activated_opacities = self.get_opacity * valid_mask.float().unsqueeze(-1)
+        # Apply both instance validity and temporal filtering to opacity
+        # Final opacity: alpha_final = sigmoid(alpha_raw) * instance_mask * delta_opacities
+        opacity_mask = instance_valid_mask.float().unsqueeze(-1)
+        if delta_opacities is not None:
+            opacity_mask = opacity_mask * delta_opacities.unsqueeze(-1)
+
+        activated_opacities = self.get_opacity * opacity_mask
         activated_rotations = self.quat_act(world_quats)
         actovated_colors = rgbs
 
@@ -320,7 +412,7 @@ class NonRigidNodes(DeformableGaussians):
 
     def split_gaussians(self, split_mask: torch.Tensor, samps: int) -> Tuple:
         """
-        Override split_gaussians to include point_ids
+        Override split_gaussians to include point_ids and temporal parameters.
         """
         # Get split results from parent class
         (
@@ -335,6 +427,11 @@ class NonRigidNodes(DeformableGaussians):
         # Compute split_ids: repeat the ids of split gaussians
         split_ids = self.point_ids[split_mask].repeat(samps, 1)
 
+        # Split temporal parameters: repeat parent's temporal center and scale
+        split_xyz_t = self._xyz_t[split_mask].repeat(samps, 1)
+        split_scaling_t = self._scaling_t[split_mask].repeat(samps, 1)
+        split_velocities = self._velocities[split_mask].repeat(samps, 1)
+
         return (
             split_means,
             split_feature_dc,
@@ -343,11 +440,14 @@ class NonRigidNodes(DeformableGaussians):
             split_scales,
             split_quats,
             split_ids,
+            split_xyz_t,
+            split_scaling_t,
+            split_velocities,
         )
 
     def dup_gaussians(self, dup_mask: torch.Tensor) -> Tuple:
         """
-        Override dup_gaussians to include point_ids
+        Override dup_gaussians to include point_ids and temporal parameters.
         """
         # Get dup results from parent class
         (
@@ -362,6 +462,11 @@ class NonRigidNodes(DeformableGaussians):
         # Compute dup_ids: use the ids of duplicated gaussians
         dup_ids = self.point_ids[dup_mask]
 
+        # Duplicate temporal parameters
+        dup_xyz_t = self._xyz_t[dup_mask]
+        dup_scaling_t = self._scaling_t[dup_mask]
+        dup_velocities = self._velocities[dup_mask]
+
         return (
             dup_means,
             dup_feature_dc,
@@ -370,6 +475,9 @@ class NonRigidNodes(DeformableGaussians):
             dup_scales,
             dup_quats,
             dup_ids,
+            dup_xyz_t,
+            dup_scaling_t,
+            dup_velocities,
         )
 
     def refinement_after(self, step: int, optimizer: torch.optim.Optimizer) -> None:
@@ -407,6 +515,9 @@ class NonRigidNodes(DeformableGaussians):
                     split_scales,
                     split_quats,
                     split_ids,
+                    split_xyz_t,
+                    split_scaling_t,
+                    split_velocities,
                 ) = self.split_gaussians(splits, nsamps)
 
                 dups = (
@@ -421,6 +532,9 @@ class NonRigidNodes(DeformableGaussians):
                     dup_scales,
                     dup_quats,
                     dup_ids,
+                    dup_xyz_t,
+                    dup_scaling_t,
+                    dup_velocities,
                 ) = self.dup_gaussians(dups)
 
                 self._means = Parameter(torch.cat([self._means.detach(), split_means, dup_means], dim=0))
@@ -435,6 +549,16 @@ class NonRigidNodes(DeformableGaussians):
                 )
                 self._scales = Parameter(torch.cat([self._scales.detach(), split_scales, dup_scales], dim=0))
                 self._quats = Parameter(torch.cat([self._quats.detach(), split_quats, dup_quats], dim=0))
+
+                # Concatenate temporal parameters
+                self._xyz_t = Parameter(torch.cat([self._xyz_t.detach(), split_xyz_t, dup_xyz_t], dim=0))
+                self._scaling_t = Parameter(
+                    torch.cat([self._scaling_t.detach(), split_scaling_t, dup_scaling_t], dim=0)
+                )
+                self._velocities = Parameter(
+                    torch.cat([self._velocities.detach(), split_velocities, dup_velocities], dim=0)
+                )
+
                 self.point_ids = torch.cat([self.point_ids, split_ids, dup_ids], dim=0)
 
                 # Append zeros to max_2Dsize
@@ -504,6 +628,12 @@ class NonRigidNodes(DeformableGaussians):
         self._features_dc = Parameter(self._features_dc[~culls].detach())
         self._features_rest = Parameter(self._features_rest[~culls].detach())
         self._opacities = Parameter(self._opacities[~culls].detach())
+
+        # Remove temporal parameters for culled gaussians
+        self._xyz_t = Parameter(self._xyz_t[~culls].detach())
+        self._scaling_t = Parameter(self._scaling_t[~culls].detach())
+        self._velocities = Parameter(self._velocities[~culls].detach())
+
         self.point_ids = self.point_ids[~culls]
 
         print(f"     Cull: {n_bef - self.num_points}")
@@ -516,6 +646,68 @@ class NonRigidNodes(DeformableGaussians):
 
         mask = (instance_pts.abs() > per_pts_size / 2).any(dim=-1)
         return mask
+
+    def compute_reg_loss(self):
+        """Compute regularization losses including out-of-bound velocity constraint.
+
+        Extends parent's compute_reg_loss by adding out_of_bound_loss to constrain
+        gaussian points' velocities to not exceed the instance bounding boxes.
+        """
+        # Get parent's regularization losses
+        loss_dict = super().compute_reg_loss()
+
+        # Out-of-bound loss: constrain velocity to not exceed bbox
+        out_of_bound_cfg = self.reg_cfg.get("out_of_bound", None)
+        if out_of_bound_cfg is not None:
+            w = out_of_bound_cfg.w
+            step_interval = out_of_bound_cfg.get("step_interval", 1)
+            velocity_scale = out_of_bound_cfg.get("velocity_scale", 1.0)
+            visibility_threshold = out_of_bound_cfg.get("visibility_threshold", 0.2)
+
+            if self.step % step_interval == 0:
+                # Get per-point bbox size
+                per_pts_size = self.instances_size[self.point_ids[..., 0]]  # (num_points, 3)
+                bbox_half_size = per_pts_size / 2  # (num_points, 3)
+
+                # Compute predicted positions after velocity motion
+                # new_pos = current_pos + velocity * velocity_scale
+                predicted_pos = self._means + self._velocities * velocity_scale  # (num_points, 3)
+
+                # Get gaussian scales (point visibility radius)
+                scales = torch.exp(self._scales)  # (num_points, 3)
+
+                # Get temporal visibility (delta_opacity) to filter points
+                if hasattr(self, "normalized_timestamps"):
+                    _, delta_opacities = self.get_deformation()  # (num_points,)
+                    # Only consider points with sufficient temporal visibility
+                    visible_mask = delta_opacities >= visibility_threshold
+                else:
+                    visible_mask = torch.ones(self.num_points, dtype=torch.bool, device=self.device)
+
+                # Compute gaussian visibility bounds after motion
+                # The visible range is [predicted_pos - scales, predicted_pos + scales]
+                lower_bound = predicted_pos - scales  # (num_points, 3)
+                upper_bound = predicted_pos + scales  # (num_points, 3)
+
+                # Check if gaussian visibility range exceeds bbox bounds
+                # bbox bounds: [-size/2, size/2]
+                lower_violation = torch.clamp(-lower_bound - bbox_half_size, min=0)  # (num_points, 3)
+                upper_violation = torch.clamp(upper_bound - bbox_half_size, min=0)  # (num_points, 3)
+
+                # Combined violation (sum across dimensions)
+                violation = (lower_violation + upper_violation).sum(dim=-1)  # (num_points,)
+
+                # Apply visibility mask: only penalize visible points
+                violation = violation * visible_mask.float()
+
+                # Compute loss as mean of violations
+                if visible_mask.sum() > 0:
+                    out_of_bound_loss = violation.sum() / visible_mask.sum().float() * w
+                else:
+                    out_of_bound_loss = torch.tensor(0.0, device=self.device)
+                loss_dict["nonrigid_out_of_bound"] = out_of_bound_loss
+
+        return loss_dict
 
     def state_dict(self) -> Dict:
         """Get state dictionary for saving."""

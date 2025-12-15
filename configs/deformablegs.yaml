@@ -38,7 +38,7 @@ trainer:
     xyz:
       lr: 1.6e-04
       lr_final: 1.6e-06
-      scale_factor: scene_radius # str or float, if "scene_scale", scale the learning rate by the scene scale
+      scale_factor: scene_radius # str or float, if "scene_radius", scale the learning rate by the scene scale
     sh_dc:
       lr: 0.0025
     sh_rest:
@@ -95,7 +95,7 @@ model:
         lr: 1.6e-04
         lr_final: 1.6e-06
         lr_pre_warmup: 0.01
-        scale_factor: 5            # str or float, if "scene_scale", scale the learning rate by the scene scale
+        scale_factor: 5            # str or float, if "scene_radius", scale the learning rate by the scene scale
         max_steps: 40000
   Sky:
     type: models.modules.EnvLight
@@ -126,7 +126,7 @@ render:
   fps: 10 # frames per second for the main rendered output
   render_full: True # whether to render full resolution videos
   render_test: True # whether to render test set
-  render_novel: 
+  render_novel:
     traj_types:
       - front_center_interp # type of trajectory for novel view synthesis
     fps: 24 # frames per second for novel view rendering

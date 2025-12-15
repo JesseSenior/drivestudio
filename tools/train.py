@@ -152,12 +152,14 @@ def main(args):
         "RigidNodes_rgbs",
         "DeformableNodes_rgbs",
         "SMPLNodes_rgbs",
+        "NonRigidNodes_rgbs",
         # "depths",
         # "Background_depths",
         # "Dynamic_depths",
         # "RigidNodes_depths",
         # "DeformableNodes_depths",
         # "SMPLNodes_depths",
+        # "NonRigidNodes_depths",
         # "mask"
     ]
     if cfg.render.vis_lidar:

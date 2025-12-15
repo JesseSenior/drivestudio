@@ -17,6 +17,7 @@ vscode_debugs
 debug/
 .vscode
 log*/
+/logs
 wandb/
 nr3d_lib/
 # smplx/

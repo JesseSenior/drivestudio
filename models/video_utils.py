@@ -111,8 +111,9 @@ def render(
         RigidNodes_rgbs,
         DeformableNodes_rgbs,
         SMPLNodes_rgbs,
+        NonRigidNodes_rgbs,
         Dynamic_rgbs,
-    ) = [], [], [], [], []
+    ) = [], [], [], [], [], []
     error_maps = []
 
     # depths
@@ -122,8 +123,9 @@ def render(
         RigidNodes_depths,
         DeformableNodes_depths,
         SMPLNodes_depths,
+        NonRigidNodes_depths,
         Dynamic_depths,
-    ) = [], [], [], [], []
+    ) = [], [], [], [], [], []
 
     # sky
     opacities, sky_masks = [], []
@@ -132,8 +134,9 @@ def render(
         RigidNodes_opacities,
         DeformableNodes_opacities,
         SMPLNodes_opacities,
+        NonRigidNodes_opacities,
         Dynamic_opacities,
-    ) = [], [], [], [], []
+    ) = [], [], [], [], [], []
 
     # misc
     cam_names, cam_ids = [], []
@@ -197,6 +200,11 @@ def render(
                     1 - results["SMPLNodes_opacity"]
                 )
                 SMPLNodes_rgbs.append(get_numpy(SMPLNodes_rgb))
+            if "NonRigidNodes_rgb" in results:
+                NonRigidNodes_rgb = results["NonRigidNodes_rgb"] * results[
+                    "NonRigidNodes_opacity"
+                ] + green_background * (1 - results["NonRigidNodes_opacity"])
+                NonRigidNodes_rgbs.append(get_numpy(NonRigidNodes_rgb))
             if "Dynamic_rgb" in results:
                 Dynamic_rgb = results["Dynamic_rgb"] * results["Dynamic_opacity"] + green_background * (
                     1 - results["Dynamic_opacity"]
@@ -232,6 +240,9 @@ def render(
             if "SMPLNodes_depth" in results:
                 SMPLNodes_depths.append(get_numpy(results["SMPLNodes_depth"]))
                 SMPLNodes_opacities.append(get_numpy(results["SMPLNodes_opacity"]))
+            if "NonRigidNodes_depth" in results:
+                NonRigidNodes_depths.append(get_numpy(results["NonRigidNodes_depth"]))
+                NonRigidNodes_opacities.append(get_numpy(results["NonRigidNodes_opacity"]))
             if "Dynamic_depth" in results:
                 Dynamic_depths.append(get_numpy(results["Dynamic_depth"]))
                 Dynamic_opacities.append(get_numpy(results["Dynamic_opacity"]))
@@ -359,6 +370,8 @@ def render(
         results_dict["DeformableNodes_rgbs"] = DeformableNodes_rgbs
     if len(SMPLNodes_rgbs) > 0:
         results_dict["SMPLNodes_rgbs"] = SMPLNodes_rgbs
+    if len(NonRigidNodes_rgbs) > 0:
+        results_dict["NonRigidNodes_rgbs"] = NonRigidNodes_rgbs
     if len(Dynamic_rgbs) > 0:
         results_dict["Dynamic_rgbs"] = Dynamic_rgbs
     if len(Background_depths) > 0:
@@ -369,6 +382,8 @@ def render(
         results_dict["DeformableNodes_depths"] = DeformableNodes_depths
     if len(SMPLNodes_depths) > 0:
         results_dict["SMPLNodes_depths"] = SMPLNodes_depths
+    if len(NonRigidNodes_depths) > 0:
+        results_dict["NonRigidNodes_depths"] = NonRigidNodes_depths
     if len(Dynamic_depths) > 0:
         results_dict["Dynamic_depths"] = Dynamic_depths
     if len(Background_opacities) > 0:
@@ -379,6 +394,8 @@ def render(
         results_dict["DeformableNodes_opacities"] = DeformableNodes_opacities
     if len(SMPLNodes_opacities) > 0:
         results_dict["SMPLNodes_opacities"] = SMPLNodes_opacities
+    if len(NonRigidNodes_opacities) > 0:
+        results_dict["NonRigidNodes_opacities"] = NonRigidNodes_opacities
     if len(Dynamic_opacities) > 0:
         results_dict["Dynamic_opacities"] = Dynamic_opacities
     return results_dict
