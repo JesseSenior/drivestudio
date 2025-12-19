@@ -717,6 +717,9 @@ class NonRigidNodes(VanillaGaussians):
                 "point_ids": self.point_ids,
                 "instances_size": self.instances_size,
                 "instances_fv": self.instances_fv,
+                "_xyz_t": self._xyz_t,
+                "_scaling_t": self._scaling_t,
+                "_velocities": self._velocities,
             }
         )
         return state_dict
@@ -728,5 +731,8 @@ class NonRigidNodes(VanillaGaussians):
         self.instances_fv = state_dict.pop("instances_fv")
         self.instances_trans = Parameter(torch.zeros(self.num_frames, self.num_instances, 3, device=self.device))
         self.instances_quats = Parameter(torch.zeros(self.num_frames, self.num_instances, 4, device=self.device))
+        self._xyz_t = Parameter(torch.zeros_like(state_dict["_xyz_t"]))
+        self._scaling_t = Parameter(torch.zeros_like(state_dict["_scaling_t"]))
+        self._velocities = Parameter(torch.zeros_like(state_dict["_velocities"]))
         msg = super().load_state_dict(state_dict, **kwargs)
         return msg
