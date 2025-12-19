@@ -60,7 +60,6 @@ python tools/train.py \
     --config_file $config_path \
     --output_root $output_root \
     --run_name $expname \
-    --enable_viewer \
     dataset=$dataset \
     data.scene_idx=$scene_idx \
     data.start_timestep=$start_timestep \
@@ -69,4 +68,15 @@ python tools/train.py \
 
 ```bash
 python tools/eval.py --resume_from $ckpt_path
+```
+
+## StreetWorld渲染器
+
+目前本模型的渲染器不支持修改动态物体轨迹信息，交通流与原始数据集保持一致
+
+```bash
+export PYTHONPATH=$(pwd)
+
+python tools/server.py --ckpt logs/drivestudio/nuscenes/checkpoint_final.pth
+python tools/example_client.py --server ws://127.0.0.1:8766
 ```
